@@ -1,0 +1,1205 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model User {
+  id                   String              @id @default(cuid())
+  name                 String
+  phone                String              @unique
+  email                String?             @unique
+  password             String
+  role                 UserRole            @default(AGENT)
+  accountMode          AgentAccountMode    @default(SELF_STAFF)
+  logoUrl              String?
+  isActive             Boolean             @default(true)
+  createdAt            DateTime            @default(now())
+  updatedAt            DateTime            @updatedAt
+  address              String?
+  district             String?
+  pincode              String?
+  state                String?
+  announcementsCreated AdminAnnouncement[] @relation("AnnouncementCreatedBy")
+  bankAccount          AgentBankAccount?
+  creditAccount        AgentCreditAccount?
+  consultants          Consultant[]
+  creditTransactions   CreditTransaction[]
+  customers            Customer[]
+  downloads            Download[]
+  emiFollowUps         EmiFollowUp[]
+  enquiries            Enquiry[]
+  followUps            FollowUp[]
+  mediaApprovals       Media[]             @relation("MediaApprovedBy")
+  mediaUploads         Media[]             @relation("MediaUploadedBy")
+  mediaRatings         MediaRating[]
+  passwordResetOtps    PasswordResetOtp[]
+  policies             Policy[]
+  renewalFollowUps     RenewalFollowUp[]
+  subAgents            SubAgent[]
+  supportReplies       SupportMessage[]    @relation("SupportMessageAdmin")
+  supportMessages      SupportMessage[]    @relation("SupportMessageAgent")
+  companies            UserCompany[]
+  withdrawalRequests   WithdrawalRequest[] @relation("AgentWithdrawals")
+  withdrawalsApproved  WithdrawalRequest[] @relation("WithdrawalApprovedBy")
+  staffs               Staff[]
+
+  examsCreated  Exam[]         @relation("ExamCreatedBy")
+  examAttempts  ExamAttempt[]
+  examBookmarks ExamBookmark[]
+}
+
+model Company {
+  id         String              @id @default(cuid())
+  name       String
+  logoUrl    String?
+  isActive   Boolean             @default(true)
+  createdAt  DateTime            @default(now())
+  updatedAt  DateTime            @updatedAt
+  categories InsuranceCategory[] @default([])
+  media      Media[]
+  policies   Policy[]
+  users      UserCompany[]
+
+  @@index([isActive])
+}
+
+model UserCompany {
+  id        String   @id @default(cuid())
+  userId    String
+  companyId String
+  agentCode String?
+  createdAt DateTime @default(now())
+  company   Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, companyId])
+  @@index([userId])
+  @@index([companyId])
+}
+
+model SubAgent {
+  id             String     @id @default(cuid())
+  userId         String
+  code           String
+  name           String
+  phone          String?
+  whatsapp       String?
+  email          String?
+  address        String?
+  district       String?
+  state          String?
+  pincode        String?
+  notes          String?
+  isActive       Boolean    @default(true)
+  inactiveReason String?
+  inactiveAt     DateTime?
+  createdAt      DateTime   @default(now())
+  updatedAt      DateTime   @updatedAt
+  customers      Customer[]
+  policies       Policy[]
+  user           User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, code])
+  @@index([userId])
+  @@index([userId, isActive])
+  @@index([userId, name])
+  @@index([phone])
+}
+
+model Consultant {
+  id             String    @id @default(cuid())
+  userId         String
+  code           String
+  name           String
+  contactPerson  String?
+  phone          String?
+  whatsapp       String?
+  email          String?
+  address        String?
+  district       String?
+  state          String?
+  pincode        String?
+  paymentTerms   String?
+  notes          String?
+  isActive       Boolean   @default(true)
+  inactiveReason String?
+  inactiveAt     DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  user           User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  policies       Policy[]
+
+  @@unique([userId, code])
+  @@index([userId])
+  @@index([userId, isActive])
+  @@index([userId, name])
+}
+
+model Category {
+  id        String   @id @default(cuid())
+  name      String
+  slug      String   @unique
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  media     Media[]
+}
+
+model Media {
+  id                 String              @id @default(cuid())
+  title              String
+  type               MediaType           @default(IMAGE)
+  fileUrl            String
+  thumbnailUrl       String?
+  companyId          String?
+  categoryId         String
+  isActive           Boolean             @default(true)
+  createdAt          DateTime            @default(now())
+  updatedAt          DateTime            @updatedAt
+  approvalStatus     MediaApprovalStatus @default(APPROVED)
+  approvedAt         DateTime?
+  approvedByUserId   String?
+  rejectionReason    String?
+  source             MediaSource         @default(ADMIN)
+  uploadedByUserId   String?
+  creditAmount       Decimal?            @db.Decimal(14, 2)
+  creditedAt         DateTime?
+  creditTransactions CreditTransaction[]
+  downloads          Download[]
+  approvedBy         User?               @relation("MediaApprovedBy", fields: [approvedByUserId], references: [id])
+  category           Category            @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  company            Company?            @relation(fields: [companyId], references: [id])
+  uploadedBy         User?               @relation("MediaUploadedBy", fields: [uploadedByUserId], references: [id])
+  ratings            MediaRating[]
+
+  @@index([companyId])
+  @@index([categoryId])
+  @@index([uploadedByUserId])
+  @@index([approvedByUserId])
+  @@index([isActive])
+  @@index([source])
+  @@index([approvalStatus])
+  @@index([companyId, categoryId])
+  @@index([approvalStatus, isActive])
+  @@index([source, approvalStatus])
+  @@index([uploadedByUserId, approvalStatus])
+}
+
+model Download {
+  id        String   @id @default(cuid())
+  userId    String
+  mediaId   String
+  createdAt DateTime @default(now())
+  media     Media    @relation(fields: [mediaId], references: [id], onDelete: Cascade)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([mediaId])
+  @@index([createdAt])
+  @@index([userId, createdAt])
+  @@index([mediaId, createdAt])
+}
+
+model MediaRating {
+  id        String   @id @default(cuid())
+  userId    String
+  mediaId   String
+  rating    Int
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  media     Media    @relation(fields: [mediaId], references: [id], onDelete: Cascade)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, mediaId])
+  @@index([userId])
+  @@index([mediaId])
+  @@index([mediaId, rating])
+  @@index([createdAt])
+}
+
+model Customer {
+  id               String            @id @default(cuid())
+  userId           String
+  name             String
+  phone            String
+  email            String?
+  dateOfBirth      DateTime?
+  gender           String?
+  address          String?
+  district         String?
+  state            String?
+  pincode          String?
+  notes            String?
+  isActive         Boolean           @default(true)
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+  customerId       String            @unique
+  inactiveAt       DateTime?
+  inactiveReason   String?
+  sourceType       CustomerSource    @default(SELF)
+  subAgentId       String?
+  subAgent         SubAgent?         @relation(fields: [subAgentId], references: [id])
+  user             User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  emiFollowUps     EmiFollowUp[]
+  enquiries        Enquiry[]
+  followUps        FollowUp[]
+  policies         Policy[]
+  renewalFollowUps RenewalFollowUp[]
+
+  @@index([userId])
+  @@index([phone])
+  @@index([subAgentId])
+  @@index([userId, phone])
+  @@index([userId, sourceType])
+  @@index([userId, subAgentId])
+  @@index([userId, isActive])
+  @@index([userId, createdAt])
+  @@index([userId, isActive, createdAt])
+}
+
+model Enquiry {
+  id               String        @id @default(cuid())
+  userId           String
+  customerId       String
+  businessType     BusinessType
+  requirement      String?
+  remarks          String?
+  status           EnquiryStatus @default(NEW)
+  enquiryDate      DateTime      @default(now())
+  nextFollowUpDate DateTime?
+  convertedAt      DateTime?
+  closedAt         DateTime?
+  isActive         Boolean       @default(true)
+  createdAt        DateTime      @default(now())
+  updatedAt        DateTime      @updatedAt
+  customer         Customer      @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  user             User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  followUps        FollowUp[]
+
+  @@index([userId])
+  @@index([customerId])
+  @@index([userId, status])
+  @@index([userId, businessType])
+  @@index([userId, nextFollowUpDate])
+  @@index([userId, status, nextFollowUpDate])
+  @@index([customerId, createdAt])
+}
+
+model FollowUp {
+  id                 String          @id @default(cuid())
+  userId             String
+  customerId         String
+  enquiryId          String?
+  comment            String
+  followUpDate       DateTime
+  nextFollowUpDate   DateTime?
+  status             FollowUpStatus  @default(PENDING)
+  completedAt        DateTime?
+  createdAt          DateTime        @default(now())
+  updatedAt          DateTime        @updatedAt
+  cancellationReason String?
+  lostReason         String?
+  outcome            FollowUpOutcome @default(CONTINUE)
+  customer           Customer        @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  enquiry            Enquiry?        @relation(fields: [enquiryId], references: [id], onDelete: Cascade)
+  user               User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([customerId])
+  @@index([enquiryId])
+  @@index([userId, status])
+  @@index([userId, outcome])
+  @@index([userId, followUpDate])
+  @@index([userId, status, followUpDate])
+  @@index([customerId, createdAt])
+}
+
+model Policy {
+  id                        String                @id @default(cuid())
+  customerId                String
+  policyNumber              String
+  companyName               String
+  productName               String?
+  sumInsured                Decimal?              @db.Decimal(14, 2)
+  premium                   Decimal?              @db.Decimal(14, 2)
+  startDate                 DateTime?
+  expiryDate                DateTime?
+  policyPdfUrl              String?
+  paymentType               PolicyPaymentType     @default(FULL)
+  financier                 String?
+  financedAmount            Decimal?              @db.Decimal(14, 2)
+  emiAmount                 Decimal?              @db.Decimal(14, 2)
+  emiTenure                 Int?
+  firstEmiDate              DateTime?
+  notes                     String?
+  isActive                  Boolean               @default(true)
+  createdAt                 DateTime              @default(now())
+  updatedAt                 DateTime              @updatedAt
+  userId                    String
+  policyType                BusinessType?
+  actualPremium             Decimal?              @db.Decimal(14, 2)
+  agentMargin               Decimal?              @db.Decimal(14, 2)
+  agentPayable              Decimal?              @db.Decimal(14, 2)
+  commissionIncome          Decimal?              @db.Decimal(14, 2)
+  consultantId              String?
+  continuousCoverYears      Int?
+  customerDiscount          Decimal?              @db.Decimal(14, 2)
+  customerPremium           Decimal?              @db.Decimal(14, 2)
+  customerSource            CustomerSource        @default(SELF)
+  healthBusinessType        HealthBusinessType?
+  lifeProductType           LifeProductType?
+  motorCoverType            MotorCoverType?
+  motorOtherVehicleType     String?
+  motorVehicleClass         MotorVehicleClass?
+  motorVehicleSubClass      String?
+  otherLifeProductName      String?
+  placementSource           PolicyPlacementSource @default(SELF)
+  policyStage               PolicyStage           @default(ISSUED)
+  previousInsurerName       String?
+  previousPolicyExpiry      DateTime?
+  previousPolicyNumber      String?
+  previousSumInsured        Decimal?              @db.Decimal(14, 2)
+  subAgentId                String?
+  vehicleIdv                Decimal?              @db.Decimal(14, 2)
+  vehicleMake               String?
+  vehicleModel              String?
+  vehicleNcbPercent         Decimal?              @db.Decimal(6, 2)
+  vehicleRegistrationNumber String?
+  vehicleYear               Int?
+  companyId                 String?
+  emiFollowUps              EmiFollowUp[]
+  installments              EmiInstallment[]
+  company                   Company?              @relation(fields: [companyId], references: [id])
+  consultant                Consultant?           @relation(fields: [consultantId], references: [id])
+  customer                  Customer              @relation(fields: [customerId], references: [id])
+  subAgent                  SubAgent?             @relation(fields: [subAgentId], references: [id])
+  user                      User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  renewalFollowUps          RenewalFollowUp[]
+
+  @@index([userId])
+  @@index([customerId])
+  @@index([companyId])
+  @@index([subAgentId])
+  @@index([consultantId])
+  @@index([userId, customerId])
+  @@index([userId, companyId])
+  @@index([userId, companyId, startDate])
+  @@index([policyNumber])
+  @@index([userId, policyNumber])
+  @@index([expiryDate])
+  @@index([userId, expiryDate])
+  @@index([userId, policyType])
+  @@index([userId, policyStage])
+  @@index([userId, customerSource])
+  @@index([userId, subAgentId])
+  @@index([userId, placementSource])
+  @@index([userId, consultantId])
+  @@index([userId, motorVehicleClass])
+  @@index([userId, motorCoverType])
+  @@index([userId, healthBusinessType])
+  @@index([userId, lifeProductType])
+  @@index([userId, paymentType])
+  @@index([userId, isActive])
+  @@index([userId, isActive, expiryDate])
+  @@index([userId, customerId, isActive])
+}
+
+model RenewalFollowUp {
+  id               String                @id @default(cuid())
+  userId           String
+  customerId       String
+  policyId         String
+  status           RenewalFollowUpStatus @default(NOT_CONTACTED)
+  followUpDate     DateTime?
+  nextFollowUpDate DateTime?
+  remarks          String?
+  quotedPremium    Decimal?              @db.Decimal(14, 2)
+  outcome          RenewalOutcome?
+  completedAt      DateTime?
+  createdAt        DateTime              @default(now())
+  updatedAt        DateTime              @updatedAt
+  customer         Customer              @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  policy           Policy                @relation(fields: [policyId], references: [id], onDelete: Cascade)
+  user             User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([customerId])
+  @@index([policyId])
+  @@index([userId, status])
+  @@index([userId, followUpDate])
+  @@index([userId, nextFollowUpDate])
+  @@index([userId, status, nextFollowUpDate])
+  @@index([customerId, createdAt])
+  @@index([policyId, createdAt])
+}
+
+model EmiInstallment {
+  id                String        @id @default(cuid())
+  policyId          String
+  installmentNumber Int
+  dueDate           DateTime
+  amount            Decimal       @db.Decimal(14, 2)
+  status            EmiStatus     @default(PENDING)
+  collectedDate     DateTime?
+  collectedAmount   Decimal?      @db.Decimal(14, 2)
+  remarks           String?
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
+  followUps         EmiFollowUp[]
+  policy            Policy        @relation(fields: [policyId], references: [id], onDelete: Cascade)
+
+  @@unique([policyId, installmentNumber])
+  @@index([policyId])
+  @@index([dueDate])
+  @@index([status])
+  @@index([dueDate, status])
+  @@index([policyId, status])
+}
+
+model EmiFollowUp {
+  id               String         @id @default(cuid())
+  userId           String
+  customerId       String
+  policyId         String
+  installmentId    String
+  comment          String
+  followUpDate     DateTime
+  nextFollowUpDate DateTime?
+  status           FollowUpStatus @default(PENDING)
+  completedAt      DateTime?
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
+  customer         Customer       @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  installment      EmiInstallment @relation(fields: [installmentId], references: [id], onDelete: Cascade)
+  policy           Policy         @relation(fields: [policyId], references: [id], onDelete: Cascade)
+  user             User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([customerId])
+  @@index([policyId])
+  @@index([installmentId])
+  @@index([userId, status])
+  @@index([userId, followUpDate])
+  @@index([userId, status, followUpDate])
+  @@index([customerId, createdAt])
+  @@index([policyId, createdAt])
+  @@index([installmentId, createdAt])
+}
+
+model PasswordResetOtp {
+  id                  String    @id @default(cuid())
+  userId              String
+  otpHash             String
+  expiresAt           DateTime
+  attempts            Int       @default(0)
+  verifiedAt          DateTime?
+  usedAt              DateTime?
+  resetTokenHash      String?
+  resetTokenExpiresAt DateTime?
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+  user                User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+  @@index([resetTokenHash])
+  @@index([userId, createdAt])
+}
+
+model AdminAnnouncement {
+  id          String   @id @default(cuid())
+  message     String
+  isActive    Boolean  @default(true)
+  createdById String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  createdBy   User?    @relation("AnnouncementCreatedBy", fields: [createdById], references: [id])
+
+  @@index([isActive])
+  @@index([createdAt])
+  @@index([createdById])
+  @@index([isActive, createdAt])
+}
+
+model SupportMessage {
+  id          String               @id @default(cuid())
+  agentId     String
+  sender      SupportMessageSender
+  message     String
+  adminId     String?
+  readByAdmin Boolean              @default(false)
+  readByAgent Boolean              @default(false)
+  createdAt   DateTime             @default(now())
+  updatedAt   DateTime             @updatedAt
+  admin       User?                @relation("SupportMessageAdmin", fields: [adminId], references: [id])
+  agent       User                 @relation("SupportMessageAgent", fields: [agentId], references: [id], onDelete: Cascade)
+
+  @@index([agentId])
+  @@index([adminId])
+  @@index([sender])
+  @@index([createdAt])
+  @@index([agentId, createdAt])
+  @@index([agentId, readByAgent])
+  @@index([readByAdmin])
+}
+
+model AgentCreditAccount {
+  id               String   @id @default(cuid())
+  userId           String   @unique
+  availableBalance Decimal  @default(0) @db.Decimal(14, 2)
+  totalEarned      Decimal  @default(0) @db.Decimal(14, 2)
+  totalWithdrawn   Decimal  @default(0) @db.Decimal(14, 2)
+  totalPending     Decimal  @default(0) @db.Decimal(14, 2)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+  user             User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model CreditTransaction {
+  id            String                @id @default(cuid())
+  userId        String
+  mediaId       String?
+  type          CreditTransactionType
+  amount        Decimal               @db.Decimal(14, 2)
+  description   String?
+  referenceType String?
+  referenceId   String?
+  createdAt     DateTime              @default(now())
+  media         Media?                @relation(fields: [mediaId], references: [id])
+  user          User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([mediaId])
+  @@index([type])
+  @@index([createdAt])
+  @@index([userId, createdAt])
+}
+
+model AgentBankAccount {
+  id                String   @id @default(cuid())
+  userId            String   @unique
+  accountHolderName String
+  accountNumber     String
+  bankName          String
+  branch            String?
+  ifscCode          String
+  isActive          Boolean  @default(true)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+  user              User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model WithdrawalRequest {
+  id                String           @id @default(cuid())
+  agentId           String
+  amount            Decimal          @db.Decimal(14, 2)
+  status            WithdrawalStatus @default(PENDING)
+  accountHolderName String
+  accountNumber     String
+  bankName          String
+  branch            String?
+  ifscCode          String
+  requestedAt       DateTime         @default(now())
+  approvedById      String?
+  approvedAt        DateTime?
+  rejectedAt        DateTime?
+  rejectionReason   String?
+  paidAt            DateTime?
+  transactionNumber String?
+  paymentRemarks    String?
+  paymentProofUrl   String?
+  createdAt         DateTime         @default(now())
+  updatedAt         DateTime         @updatedAt
+  agent             User             @relation("AgentWithdrawals", fields: [agentId], references: [id], onDelete: Cascade)
+  approvedBy        User?            @relation("WithdrawalApprovedBy", fields: [approvedById], references: [id])
+
+  @@index([agentId])
+  @@index([approvedById])
+  @@index([status])
+  @@index([requestedAt])
+  @@index([agentId, status])
+}
+
+model PlatformSetting {
+  id          String   @id @default(cuid())
+  key         String   @unique
+  value       String
+  description String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model Staff {
+  id        String @id @default(cuid())
+  userId    String
+  staffCode String
+  name      String
+  phone     String @unique
+  password  String
+
+  whatsapp String?
+  email    String?
+
+  staffRole   StaffRole @default(STAFF)
+  designation String?
+  department  String?
+
+  supervisorId String?
+
+  address  String?
+  district String?
+  state    String?
+  pincode  String?
+
+  joiningDate DateTime?
+  notes       String?
+
+  loginEnabled Boolean @default(true)
+  isActive     Boolean @default(true)
+
+  inactiveReason String?
+  inactiveAt     DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  supervisor  Staff?  @relation("StaffSupervisor", fields: [supervisorId], references: [id])
+  teamMembers Staff[] @relation("StaffSupervisor")
+
+  attendance StaffAttendance[]
+
+  @@unique([userId, staffCode])
+  @@index([userId])
+  @@index([supervisorId])
+  @@index([staffRole])
+  @@index([isActive])
+}
+
+model StaffAttendance {
+  id      String @id @default(cuid())
+  staffId String
+  userId  String
+
+  date     DateTime
+  checkIn  DateTime?
+  checkOut DateTime?
+
+  status String?
+  notes  String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  staff Staff @relation(fields: [staffId], references: [id], onDelete: Cascade)
+
+  @@unique([staffId, date])
+  @@index([staffId])
+  @@index([userId])
+  @@index([date])
+}
+
+/**
+ * --------------------------------------------------------------------------
+ */
+/**
+ * EXAM MANAGEMENT
+ */
+/**
+ * --------------------------------------------------------------------------
+ */
+
+model Exam {
+  id          String  @id @default(cuid())
+  code        String  @unique
+  title       String
+  description String?
+  isActive    Boolean @default(true)
+  isPublished Boolean @default(false)
+
+  createdById String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  createdBy User? @relation("ExamCreatedBy", fields: [createdById], references: [id])
+
+  languages ExamLanguageLink[]
+  modules   ExamModule[]
+  questions ExamQuestion[]
+  tests     ExamTest[]
+  attempts  ExamAttempt[]
+
+  @@index([isActive])
+  @@index([isPublished])
+  @@index([createdById])
+  @@index([isActive, isPublished])
+}
+
+model ExamLanguage {
+  id         String   @id @default(cuid())
+  code       String   @unique
+  name       String
+  nativeName String
+  isActive   Boolean  @default(true)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  exams        ExamLanguageLink[]
+  translations ExamQuestionTranslation[]
+  attempts     ExamAttempt[]
+
+  @@index([isActive])
+  @@index([name])
+}
+
+model ExamLanguageLink {
+  id         String   @id @default(cuid())
+  examId     String
+  languageId String
+  isDefault  Boolean  @default(false)
+  isActive   Boolean  @default(true)
+  createdAt  DateTime @default(now())
+
+  exam     Exam         @relation(fields: [examId], references: [id], onDelete: Cascade)
+  language ExamLanguage @relation(fields: [languageId], references: [id], onDelete: Cascade)
+
+  @@unique([examId, languageId])
+  @@index([examId])
+  @@index([languageId])
+  @@index([examId, isActive])
+}
+
+model ExamModule {
+  id          String   @id @default(cuid())
+  examId      String
+  code        String
+  name        String
+  description String?
+  emoji       String?
+  sortOrder   Int      @default(0)
+  isActive    Boolean  @default(true)
+  isPublished Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  exam      Exam           @relation(fields: [examId], references: [id], onDelete: Cascade)
+  chapters  ExamChapter[]
+  questions ExamQuestion[]
+  tests     ExamTest[]
+
+  @@unique([examId, code])
+  @@index([examId])
+  @@index([examId, sortOrder])
+  @@index([examId, isActive, isPublished])
+}
+
+model ExamChapter {
+  id          String   @id @default(cuid())
+  moduleId    String
+  code        String
+  title       String
+  description String?
+  sortOrder   Int      @default(0)
+  isActive    Boolean  @default(true)
+  isPublished Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  module    ExamModule     @relation(fields: [moduleId], references: [id], onDelete: Cascade)
+  questions ExamQuestion[]
+  tests     ExamTest[]
+
+  @@unique([moduleId, code])
+  @@index([moduleId])
+  @@index([moduleId, sortOrder])
+  @@index([moduleId, isActive, isPublished])
+}
+
+model ExamQuestion {
+  id            String           @id @default(cuid())
+  examId        String
+  moduleId      String
+  chapterId     String?
+  code          String
+  questionType  ExamQuestionType @default(MCQ)
+  correctOption ExamOption
+  difficulty    ExamDifficulty   @default(MEDIUM)
+  sortOrder     Int              @default(0)
+  isActive      Boolean          @default(true)
+  isPublished   Boolean          @default(false)
+  createdAt     DateTime         @default(now())
+  updatedAt     DateTime         @updatedAt
+
+  exam         Exam                      @relation(fields: [examId], references: [id], onDelete: Cascade)
+  module       ExamModule                @relation(fields: [moduleId], references: [id], onDelete: Cascade)
+  chapter      ExamChapter?              @relation(fields: [chapterId], references: [id], onDelete: SetNull)
+  translations ExamQuestionTranslation[]
+  testLinks    ExamTestQuestion[]
+  answers      ExamAttemptAnswer[]
+  bookmarks    ExamBookmark[]
+
+  @@unique([examId, code])
+  @@index([examId])
+  @@index([moduleId])
+  @@index([chapterId])
+  @@index([examId, isActive, isPublished])
+  @@index([moduleId, isActive, isPublished])
+  @@index([chapterId, isActive, isPublished])
+}
+
+model ExamQuestionTranslation {
+  id           String   @id @default(cuid())
+  questionId   String
+  languageId   String
+  questionText String
+  optionA      String
+  optionB      String
+  optionC      String
+  optionD      String
+  explanation  String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  question ExamQuestion @relation(fields: [questionId], references: [id], onDelete: Cascade)
+  language ExamLanguage @relation(fields: [languageId], references: [id], onDelete: Cascade)
+
+  @@unique([questionId, languageId])
+  @@index([questionId])
+  @@index([languageId])
+}
+
+model ExamTest {
+  id                 String       @id @default(cuid())
+  examId             String
+  moduleId           String?
+  chapterId          String?
+  code               String
+  title              String
+  description        String?
+  type               ExamTestType @default(PRACTICE)
+  questionCount      Int          @default(10)
+  durationMinutes    Int?
+  passPercentage     Decimal?     @db.Decimal(5, 2)
+  randomizeQuestions Boolean      @default(true)
+  randomizeOptions   Boolean      @default(false)
+  isActive           Boolean      @default(true)
+  isPublished        Boolean      @default(false)
+  createdAt          DateTime     @default(now())
+  updatedAt          DateTime     @updatedAt
+
+  exam      Exam               @relation(fields: [examId], references: [id], onDelete: Cascade)
+  module    ExamModule?        @relation(fields: [moduleId], references: [id], onDelete: SetNull)
+  chapter   ExamChapter?       @relation(fields: [chapterId], references: [id], onDelete: SetNull)
+  questions ExamTestQuestion[]
+  attempts  ExamAttempt[]
+
+  @@unique([examId, code])
+  @@index([examId])
+  @@index([moduleId])
+  @@index([chapterId])
+  @@index([type])
+  @@index([examId, isActive, isPublished])
+}
+
+model ExamTestQuestion {
+  id         String   @id @default(cuid())
+  testId     String
+  questionId String
+  sortOrder  Int      @default(0)
+  createdAt  DateTime @default(now())
+
+  test     ExamTest     @relation(fields: [testId], references: [id], onDelete: Cascade)
+  question ExamQuestion @relation(fields: [questionId], references: [id], onDelete: Cascade)
+
+  @@unique([testId, questionId])
+  @@index([testId])
+  @@index([questionId])
+  @@index([testId, sortOrder])
+}
+
+model ExamAttempt {
+  id         String            @id @default(cuid())
+  userId     String
+  examId     String
+  testId     String?
+  languageId String?
+  mode       ExamAttemptMode
+  status     ExamAttemptStatus @default(IN_PROGRESS)
+
+  totalQuestions  Int      @default(0)
+  correctCount    Int      @default(0)
+  wrongCount      Int      @default(0)
+  unansweredCount Int      @default(0)
+  score           Decimal? @db.Decimal(10, 2)
+  percentage      Decimal? @db.Decimal(5, 2)
+  passed          Boolean?
+
+  startedAt   DateTime  @default(now())
+  submittedAt DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  user     User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  exam     Exam                @relation(fields: [examId], references: [id], onDelete: Cascade)
+  test     ExamTest?           @relation(fields: [testId], references: [id], onDelete: SetNull)
+  language ExamLanguage?       @relation(fields: [languageId], references: [id], onDelete: SetNull)
+  answers  ExamAttemptAnswer[]
+
+  @@index([userId])
+  @@index([examId])
+  @@index([testId])
+  @@index([languageId])
+  @@index([status])
+  @@index([userId, createdAt])
+  @@index([userId, examId, createdAt])
+}
+
+model ExamAttemptAnswer {
+  id               String      @id @default(cuid())
+  attemptId        String
+  questionId       String
+  selectedOption   ExamOption?
+  isCorrect        Boolean?
+  timeSpentSeconds Int?
+  answeredAt       DateTime?
+  createdAt        DateTime    @default(now())
+  updatedAt        DateTime    @updatedAt
+
+  attempt  ExamAttempt  @relation(fields: [attemptId], references: [id], onDelete: Cascade)
+  question ExamQuestion @relation(fields: [questionId], references: [id], onDelete: Cascade)
+
+  @@unique([attemptId, questionId])
+  @@index([attemptId])
+  @@index([questionId])
+}
+
+model ExamBookmark {
+  id         String   @id @default(cuid())
+  userId     String
+  questionId String
+  createdAt  DateTime @default(now())
+
+  user     User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  question ExamQuestion @relation(fields: [questionId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, questionId])
+  @@index([userId])
+  @@index([questionId])
+  @@index([userId, createdAt])
+}
+
+/**
+ * --------------------------------------------------------------------------
+ */
+/**
+ * ENUMS
+ */
+/**
+ * --------------------------------------------------------------------------
+ */
+
+enum UserRole {
+  AGENT
+  ADMIN
+}
+
+enum AgentAccountMode {
+  SELF
+  SELF_STAFF
+  SELF_STAFF_SUBAGENT
+}
+
+enum MediaType {
+  IMAGE
+  VIDEO
+}
+
+enum MediaSource {
+  ADMIN
+  AGENT
+}
+
+enum MediaApprovalStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum PolicyPaymentType {
+  FULL
+  EMI
+}
+
+enum EmiStatus {
+  PENDING
+  COLLECTED
+  MISSED
+}
+
+enum InsuranceCategory {
+  MOTOR
+  HEALTH
+  LIFE
+}
+
+enum BusinessType {
+  HEALTH
+  MOTOR
+  LIFE
+  OTHER
+}
+
+enum CustomerSource {
+  SELF
+  SUB_AGENT
+}
+
+enum PolicyPlacementSource {
+  SELF
+  CONSULTANT
+}
+
+enum PolicyStage {
+  QUOTE
+  PROPOSAL
+  ISSUED
+  RENEWAL_DUE
+  EXPIRED
+  CANCELLED
+}
+
+enum MotorVehicleClass {
+  TWO_WHEELER
+  PRIVATE_CAR
+  PASSENGER_CARRYING
+  GOODS_CARRYING
+  MISC_SPECIAL
+}
+
+enum MotorCoverType {
+  COMPREHENSIVE
+  THIRD_PARTY
+  STANDALONE_OD
+  STANDARD
+}
+
+enum HealthBusinessType {
+  FRESH
+  PORTABILITY
+  MIGRATION
+}
+
+enum LifeProductType {
+  TRADITIONAL
+  UNIT_LINKED
+  TERM
+  PENSION_ANNUITY
+  OTHER
+}
+
+enum EnquiryStatus {
+  NEW
+  FOLLOW_UP
+  CONVERTED
+  CLOSED
+  LOST
+}
+
+enum FollowUpStatus {
+  PENDING
+  COMPLETED
+  CANCELLED
+}
+
+enum FollowUpOutcome {
+  CONTINUE
+  BUSINESS_CLOSED
+  CASE_LOST
+  CANCELLED
+}
+
+enum RenewalFollowUpStatus {
+  NOT_CONTACTED
+  CONTACTED
+  FOLLOW_UP
+  INTERESTED
+  PAYMENT_PENDING
+  RENEWED
+  CLOSED
+}
+
+enum RenewalOutcome {
+  RENEWED
+  NOT_INTERESTED
+  RENEWED_ELSEWHERE
+  UNABLE_TO_CONTACT
+  LAPSED
+}
+
+enum SupportMessageSender {
+  AGENT
+  ADMIN
+}
+
+enum CreditTransactionType {
+  EARN
+  WITHDRAWAL_PENDING
+  WITHDRAWAL_PAID
+  WITHDRAWAL_REVERSED
+  ADMIN_ADJUSTMENT
+}
+
+enum WithdrawalStatus {
+  PENDING
+  APPROVED
+  PAID
+  REJECTED
+  CANCELLED
+}
+
+enum StaffRole {
+  STAFF
+  SUPERVISOR
+}
+
+enum ExamQuestionType {
+  MCQ
+}
+
+enum ExamOption {
+  A
+  B
+  C
+  D
+}
+
+enum ExamDifficulty {
+  EASY
+  MEDIUM
+  HARD
+}
+
+enum ExamTestType {
+  PRACTICE
+  CHAPTER_TEST
+  MOCK_EXAM
+}
+
+enum ExamAttemptMode {
+  QUICK
+  CHAPTER
+  MOCK
+  WRONG_ANSWERS
+  BOOKMARKS
+}
+
+enum ExamAttemptStatus {
+  IN_PROGRESS
+  SUBMITTED
+  ABANDONED
+}
