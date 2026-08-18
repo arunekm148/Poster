@@ -2,10 +2,17 @@
 
 import Link from "next/link";
 import {
+  ChangeEvent,
+  PointerEvent,
   useEffect,
+  useRef,
   useState,
 } from "react";
 import { useRouter } from "next/navigation";
+
+/* -------------------------------------------------------------------------- */
+/* TYPES                                                                      */
+/* -------------------------------------------------------------------------- */
 
 type AgentUser = {
   id?: string;
@@ -18,23 +25,38 @@ type AgentUser = {
   district?: string | null;
 };
 
+type LogoApiResponse = {
+  success?: boolean;
+  message?: string;
+  logoUrl?: string | null;
+};
+
+/* -------------------------------------------------------------------------- */
+/* CROP SETTINGS                                                              */
+/* -------------------------------------------------------------------------- */
+
+const CROP_SIZE = 320;
+const OUTPUT_SIZE = 800;
+
+/* -------------------------------------------------------------------------- */
+/* PAGE                                                                       */
+/* -------------------------------------------------------------------------- */
+
 export default function ProfilePage() {
   const router = useRouter();
 
   const [user, setUser] =
-    useState<AgentUser | null>(
-      null
-    );
+    useState<AgentUser | null>(null);
 
   const [loading, setLoading] =
     useState(true);
 
-  /* PASSWORD */
+  /* ---------------------------------------------------------------------- */
+  /* PASSWORD                                                               */
+  /* ---------------------------------------------------------------------- */
 
-  const [
-    newPassword,
-    setNewPassword,
-  ] = useState("");
+  const [newPassword, setNewPassword] =
+    useState("");
 
   const [
     confirmPassword,
@@ -54,6 +76,76 @@ export default function ProfilePage() {
   const [
     passwordSuccess,
     setPasswordSuccess,
+  ] = useState(false);
+
+  /* ---------------------------------------------------------------------- */
+  /* PROFILE PHOTO                                                          */
+  /* ---------------------------------------------------------------------- */
+
+  const fileInputRef =
+    useRef<HTMLInputElement | null>(
+      null
+    );
+
+  const cropImageRef =
+    useRef<HTMLImageElement | null>(
+      null
+    );
+
+  const [
+    cropImageUrl,
+    setCropImageUrl,
+  ] = useState<string | null>(
+    null
+  );
+
+  const [
+    naturalWidth,
+    setNaturalWidth,
+  ] = useState(0);
+
+  const [
+    naturalHeight,
+    setNaturalHeight,
+  ] = useState(0);
+
+  const [zoom, setZoom] =
+    useState(1);
+
+  const [offsetX, setOffsetX] =
+    useState(0);
+
+  const [offsetY, setOffsetY] =
+    useState(0);
+
+  const [dragging, setDragging] =
+    useState(false);
+
+  const dragStartX =
+    useRef(0);
+
+  const dragStartY =
+    useRef(0);
+
+  const dragOriginX =
+    useRef(0);
+
+  const dragOriginY =
+    useRef(0);
+
+  const [
+    savingPhoto,
+    setSavingPhoto,
+  ] = useState(false);
+
+  const [
+    photoMessage,
+    setPhotoMessage,
+  ] = useState("");
+
+  const [
+    photoSuccess,
+    setPhotoSuccess,
   ] = useState(false);
 
   /* ---------------------------------------------------------------------- */
@@ -118,9 +210,701 @@ export default function ProfilePage() {
         "/login"
       );
     } finally {
-      setLoading(false);
+      setLoading(
+        false
+      );
     }
   }, [router]);
+
+  /* ---------------------------------------------------------------------- */
+  /* CLEAN OBJECT URL                                                       */
+  /* ---------------------------------------------------------------------- */
+
+  useEffect(() => {
+    return () => {
+      if (cropImageUrl) {
+        URL.revokeObjectURL(
+          cropImageUrl
+        );
+      }
+    };
+  }, [cropImageUrl]);
+
+  /* ---------------------------------------------------------------------- */
+  /* CROP SCALE                                                             */
+  /* ---------------------------------------------------------------------- */
+
+  function getBaseScale() {
+    if (
+      naturalWidth <= 0 ||
+      naturalHeight <= 0
+    ) {
+      return 1;
+    }
+
+    return Math.max(
+      CROP_SIZE /
+        naturalWidth,
+
+      CROP_SIZE /
+        naturalHeight
+    );
+  }
+
+  /* ---------------------------------------------------------------------- */
+  /* KEEP PHOTO INSIDE CROP AREA                                            */
+  /* ---------------------------------------------------------------------- */
+
+  function clampPosition(
+    nextX: number,
+    nextY: number,
+    nextZoom = zoom
+  ) {
+    if (
+      naturalWidth <= 0 ||
+      naturalHeight <= 0
+    ) {
+      return {
+        x: 0,
+        y: 0,
+      };
+    }
+
+    const scale =
+      getBaseScale() *
+      nextZoom;
+
+    const displayWidth =
+      naturalWidth *
+      scale;
+
+    const displayHeight =
+      naturalHeight *
+      scale;
+
+    const maximumX =
+      Math.max(
+        0,
+        (
+          displayWidth -
+          CROP_SIZE
+        ) / 2
+      );
+
+    const maximumY =
+      Math.max(
+        0,
+        (
+          displayHeight -
+          CROP_SIZE
+        ) / 2
+      );
+
+    return {
+      x: Math.max(
+        -maximumX,
+        Math.min(
+          maximumX,
+          nextX
+        )
+      ),
+
+      y: Math.max(
+        -maximumY,
+        Math.min(
+          maximumY,
+          nextY
+        )
+      ),
+    };
+  }
+
+  /* ---------------------------------------------------------------------- */
+  /* SELECT PHOTO                                                           */
+  /* ---------------------------------------------------------------------- */
+
+  function handlePhotoSelect(
+    event:
+      ChangeEvent<HTMLInputElement>
+  ) {
+    const file =
+      event.target.files?.[0];
+
+    event.target.value =
+      "";
+
+    if (!file) {
+      return;
+    }
+
+    const allowedTypes = [
+      "image/jpeg",
+      "image/png",
+      "image/webp",
+    ];
+
+    if (
+      !allowedTypes.includes(
+        file.type
+      )
+    ) {
+      window.alert(
+        "Please select JPG, PNG or WEBP image."
+      );
+
+      return;
+    }
+
+    const maxSize =
+      5 * 1024 * 1024;
+
+    if (
+      file.size >
+      maxSize
+    ) {
+      window.alert(
+        "Image size must be below 5 MB."
+      );
+
+      return;
+    }
+
+    if (cropImageUrl) {
+      URL.revokeObjectURL(
+        cropImageUrl
+      );
+    }
+
+    const objectUrl =
+      URL.createObjectURL(
+        file
+      );
+
+    setNaturalWidth(
+      0
+    );
+
+    setNaturalHeight(
+      0
+    );
+
+    setZoom(
+      1
+    );
+
+    setOffsetX(
+      0
+    );
+
+    setOffsetY(
+      0
+    );
+
+    setDragging(
+      false
+    );
+
+    setPhotoMessage(
+      ""
+    );
+
+    setPhotoSuccess(
+      false
+    );
+
+    setCropImageUrl(
+      objectUrl
+    );
+  }
+
+  /* ---------------------------------------------------------------------- */
+  /* IMAGE READY                                                            */
+  /* ---------------------------------------------------------------------- */
+
+  function handleCropImageLoad() {
+    const image =
+      cropImageRef.current;
+
+    if (!image) {
+      return;
+    }
+
+    setNaturalWidth(
+      image.naturalWidth
+    );
+
+    setNaturalHeight(
+      image.naturalHeight
+    );
+
+    setZoom(
+      1
+    );
+
+    setOffsetX(
+      0
+    );
+
+    setOffsetY(
+      0
+    );
+  }
+
+  /* ---------------------------------------------------------------------- */
+  /* CHANGE ZOOM                                                            */
+  /* ---------------------------------------------------------------------- */
+
+  function handleZoomChange(
+    nextZoom: number
+  ) {
+    const position =
+      clampPosition(
+        offsetX,
+        offsetY,
+        nextZoom
+      );
+
+    setZoom(
+      nextZoom
+    );
+
+    setOffsetX(
+      position.x
+    );
+
+    setOffsetY(
+      position.y
+    );
+  }
+
+  /* ---------------------------------------------------------------------- */
+  /* DRAG PHOTO                                                             */
+  /* ---------------------------------------------------------------------- */
+
+  function handlePointerDown(
+    event:
+      PointerEvent<HTMLDivElement>
+  ) {
+    if (
+      !naturalWidth ||
+      !naturalHeight
+    ) {
+      return;
+    }
+
+    setDragging(
+      true
+    );
+
+    dragStartX.current =
+      event.clientX;
+
+    dragStartY.current =
+      event.clientY;
+
+    dragOriginX.current =
+      offsetX;
+
+    dragOriginY.current =
+      offsetY;
+
+    event.currentTarget.setPointerCapture(
+      event.pointerId
+    );
+  }
+
+  function handlePointerMove(
+    event:
+      PointerEvent<HTMLDivElement>
+  ) {
+    if (!dragging) {
+      return;
+    }
+
+    const deltaX =
+      event.clientX -
+      dragStartX.current;
+
+    const deltaY =
+      event.clientY -
+      dragStartY.current;
+
+    const position =
+      clampPosition(
+        dragOriginX.current +
+          deltaX,
+
+        dragOriginY.current +
+          deltaY
+      );
+
+    setOffsetX(
+      position.x
+    );
+
+    setOffsetY(
+      position.y
+    );
+  }
+
+  function handlePointerEnd(
+    event:
+      PointerEvent<HTMLDivElement>
+  ) {
+    setDragging(
+      false
+    );
+
+    try {
+      if (
+        event.currentTarget.hasPointerCapture(
+          event.pointerId
+        )
+      ) {
+        event.currentTarget.releasePointerCapture(
+          event.pointerId
+        );
+      }
+    } catch {
+      // Ignore pointer release error
+    }
+  }
+
+  /* ---------------------------------------------------------------------- */
+  /* CREATE CROPPED IMAGE                                                   */
+  /* ---------------------------------------------------------------------- */
+
+  async function createCroppedBlob() {
+    const image =
+      cropImageRef.current;
+
+    if (
+      !image ||
+      !naturalWidth ||
+      !naturalHeight
+    ) {
+      throw new Error(
+        "Image is not ready."
+      );
+    }
+
+    const scale =
+      getBaseScale() *
+      zoom;
+
+    const displayWidth =
+      naturalWidth *
+      scale;
+
+    const displayHeight =
+      naturalHeight *
+      scale;
+
+    const imageLeft =
+      (
+        CROP_SIZE -
+        displayWidth
+      ) /
+        2 +
+      offsetX;
+
+    const imageTop =
+      (
+        CROP_SIZE -
+        displayHeight
+      ) /
+        2 +
+      offsetY;
+
+    let sourceX =
+      -imageLeft /
+      scale;
+
+    let sourceY =
+      -imageTop /
+      scale;
+
+    let sourceSize =
+      CROP_SIZE /
+      scale;
+
+    sourceX =
+      Math.max(
+        0,
+        Math.min(
+          naturalWidth -
+            sourceSize,
+          sourceX
+        )
+      );
+
+    sourceY =
+      Math.max(
+        0,
+        Math.min(
+          naturalHeight -
+            sourceSize,
+          sourceY
+        )
+      );
+
+    sourceSize =
+      Math.min(
+        sourceSize,
+        naturalWidth -
+          sourceX,
+        naturalHeight -
+          sourceY
+      );
+
+    const canvas =
+      document.createElement(
+        "canvas"
+      );
+
+    canvas.width =
+      OUTPUT_SIZE;
+
+    canvas.height =
+      OUTPUT_SIZE;
+
+    const context =
+      canvas.getContext(
+        "2d"
+      );
+
+    if (!context) {
+      throw new Error(
+        "Unable to prepare cropped image."
+      );
+    }
+
+    context.imageSmoothingEnabled =
+      true;
+
+    context.imageSmoothingQuality =
+      "high";
+
+    context.clearRect(
+      0,
+      0,
+      OUTPUT_SIZE,
+      OUTPUT_SIZE
+    );
+
+    context.drawImage(
+      image,
+      sourceX,
+      sourceY,
+      sourceSize,
+      sourceSize,
+      0,
+      0,
+      OUTPUT_SIZE,
+      OUTPUT_SIZE
+    );
+
+    const blob =
+      await new Promise<Blob | null>(
+        (
+          resolve
+        ) => {
+          canvas.toBlob(
+            resolve,
+            "image/webp",
+            0.9
+          );
+        }
+      );
+
+    if (!blob) {
+      throw new Error(
+        "Unable to crop image."
+      );
+    }
+
+    return blob;
+  }
+
+  /* ---------------------------------------------------------------------- */
+  /* CLOSE CROP                                                             */
+  /* ---------------------------------------------------------------------- */
+
+  function closeCropper() {
+    if (savingPhoto) {
+      return;
+    }
+
+    if (cropImageUrl) {
+      URL.revokeObjectURL(
+        cropImageUrl
+      );
+    }
+
+    setCropImageUrl(
+      null
+    );
+
+    setNaturalWidth(
+      0
+    );
+
+    setNaturalHeight(
+      0
+    );
+
+    setZoom(
+      1
+    );
+
+    setOffsetX(
+      0
+    );
+
+    setOffsetY(
+      0
+    );
+
+    setDragging(
+      false
+    );
+  }
+
+  /* ---------------------------------------------------------------------- */
+  /* SAVE CROPPED PHOTO                                                     */
+  /* ---------------------------------------------------------------------- */
+
+  async function saveCroppedPhoto() {
+    if (!user?.id) {
+      setPhotoSuccess(
+        false
+      );
+
+      setPhotoMessage(
+        "Login information not found. Please login again."
+      );
+
+      return;
+    }
+
+    try {
+      setSavingPhoto(
+        true
+      );
+
+      setPhotoSuccess(
+        false
+      );
+
+      setPhotoMessage(
+        ""
+      );
+
+      const croppedBlob =
+        await createCroppedBlob();
+
+      const formData =
+        new FormData();
+
+      formData.append(
+        "userId",
+        user.id
+      );
+
+      formData.append(
+        "logo",
+        croppedBlob,
+        "agent-logo.webp"
+      );
+
+      const response =
+        await fetch(
+          "/api/profile/logo",
+          {
+            method:
+              "PATCH",
+
+            body:
+              formData,
+          }
+        );
+
+      let data:
+        LogoApiResponse =
+        {};
+
+      try {
+        data =
+          await response.json();
+      } catch {
+        data = {};
+      }
+
+      if (
+        !response.ok ||
+        !data.success ||
+        !data.logoUrl
+      ) {
+        throw new Error(
+          data.message ||
+            "Unable to update profile photo."
+        );
+      }
+
+      const updatedUser:
+        AgentUser = {
+          ...user,
+          logoUrl:
+            data.logoUrl,
+        };
+
+      setUser(
+        updatedUser
+      );
+
+      localStorage.setItem(
+        "agentUser",
+        JSON.stringify(
+          updatedUser
+        )
+      );
+
+      localStorage.setItem(
+        "userLogoUrl",
+        data.logoUrl
+      );
+
+      setPhotoSuccess(
+        true
+      );
+
+      setPhotoMessage(
+        data.message ||
+          "Profile photo updated successfully."
+      );
+
+      closeCropper();
+    } catch (error) {
+      console.error(
+        "PROFILE PHOTO ERROR:",
+        error
+      );
+
+      setPhotoSuccess(
+        false
+      );
+
+      setPhotoMessage(
+        error instanceof Error
+          ? error.message
+          : "Unable to update profile photo."
+      );
+    } finally {
+      setSavingPhoto(
+        false
+      );
+    }
+  }
 
   /* ---------------------------------------------------------------------- */
   /* CHANGE PASSWORD                                                        */
@@ -186,7 +970,8 @@ export default function ProfilePage() {
         await fetch(
           "/api/profile/password",
           {
-            method: "PATCH",
+            method:
+              "PATCH",
 
             headers: {
               "Content-Type":
@@ -235,9 +1020,13 @@ export default function ProfilePage() {
           "Password changed successfully."
       );
 
-      setNewPassword("");
+      setNewPassword(
+        ""
+      );
 
-      setConfirmPassword("");
+      setConfirmPassword(
+        ""
+      );
     } catch (error) {
       console.error(
         "CHANGE PASSWORD ERROR:",
@@ -335,6 +1124,25 @@ export default function ProfilePage() {
   }
 
   /* ---------------------------------------------------------------------- */
+  /* CROP DISPLAY VALUES                                                    */
+  /* ---------------------------------------------------------------------- */
+
+  const cropScale =
+    naturalWidth &&
+    naturalHeight
+      ? getBaseScale() *
+        zoom
+      : 1;
+
+  const cropDisplayWidth =
+    naturalWidth *
+    cropScale;
+
+  const cropDisplayHeight =
+    naturalHeight *
+    cropScale;
+
+  /* ---------------------------------------------------------------------- */
   /* UI                                                                     */
   /* ---------------------------------------------------------------------- */
 
@@ -378,55 +1186,105 @@ export default function ProfilePage() {
 
         <div className="rounded-3xl bg-gradient-to-r from-blue-700 to-blue-900 p-6 text-white shadow-lg">
 
-          <div className="flex items-center gap-4">
+          <div className="flex flex-col gap-5 sm:flex-row sm:items-center sm:justify-between">
 
-            {user.logoUrl ? (
-              <div className="flex h-20 w-20 shrink-0 items-center justify-center overflow-hidden rounded-full bg-white p-2">
+            <div className="flex items-center gap-4">
 
-                <img
-                  src={
-                    user.logoUrl
-                  }
-                  alt={
-                    user.name ||
-                    "Agent"
-                  }
-                  className="max-h-full max-w-full object-contain"
-                />
+              {user.logoUrl ? (
+                <div className="h-24 w-24 shrink-0 overflow-hidden rounded-full border-4 border-white/80 bg-white shadow-md">
 
-              </div>
-            ) : (
-              <div className="flex h-20 w-20 items-center justify-center rounded-full bg-white/20 text-4xl">
-                👤
-              </div>
-            )}
+                  <img
+                    src={
+                      user.logoUrl
+                    }
+                    alt={
+                      user.name ||
+                      "Agent"
+                    }
+                    className="h-full w-full object-cover"
+                  />
 
-            <div>
-
-              <p className="text-sm text-blue-200">
-                {user.role ===
-                "ADMIN"
-                  ? "Administrator"
-                  : "Insurance Agent"}
-              </p>
-
-              <h2 className="text-2xl font-bold">
-                {user.name ||
-                  "Agent"}
-              </h2>
-
-              {user.phone && (
-                <p className="mt-1 text-blue-100">
-                  +91{" "}
-                  {user.phone}
-                </p>
+                </div>
+              ) : (
+                <div className="flex h-24 w-24 shrink-0 items-center justify-center rounded-full border-4 border-white/30 bg-white/20 text-4xl">
+                  👤
+                </div>
               )}
+
+              <div>
+
+                <p className="text-sm text-blue-200">
+                  {user.role ===
+                  "ADMIN"
+                    ? "Administrator"
+                    : "Insurance Agent"}
+                </p>
+
+                <h2 className="text-2xl font-bold">
+                  {user.name ||
+                    "Agent"}
+                </h2>
+
+                {user.phone && (
+                  <p className="mt-1 text-blue-100">
+                    +91{" "}
+                    {user.phone}
+                  </p>
+                )}
+
+              </div>
+
+            </div>
+
+            <div className="sm:text-right">
+
+              <input
+                ref={
+                  fileInputRef
+                }
+                type="file"
+                accept="image/jpeg,image/png,image/webp"
+                onChange={
+                  handlePhotoSelect
+                }
+                className="hidden"
+              />
+
+              <button
+                type="button"
+                onClick={() =>
+                  fileInputRef.current?.click()
+                }
+                className="rounded-xl bg-white px-5 py-3 text-sm font-black text-blue-800 shadow transition hover:bg-blue-50"
+              >
+                {user.logoUrl
+                  ? "📷 Change Photo"
+                  : "📷 Add Photo"}
+              </button>
+
+              <p className="mt-2 text-xs text-blue-100">
+                Select, crop and save your preferred photo.
+              </p>
 
             </div>
 
           </div>
 
         </div>
+
+        {/* PHOTO MESSAGE */}
+
+        {photoMessage && (
+          <div
+            className={`mt-4 rounded-xl border px-4 py-3 text-sm font-bold ${
+              photoSuccess
+                ? "border-emerald-200 bg-emerald-50 text-emerald-800"
+                : "border-red-200 bg-red-50 text-red-700"
+            }`}
+          >
+            {photoMessage}
+          </div>
+        )}
 
         {/* PERSONAL DETAILS */}
 
@@ -525,9 +1383,7 @@ export default function ProfilePage() {
 
         </div>
 
-        {/* -------------------------------------------------------------- */}
-        {/* CHANGE PASSWORD                                                */}
-        {/* -------------------------------------------------------------- */}
+        {/* CHANGE PASSWORD */}
 
         <div className="mt-6 rounded-3xl border border-blue-100 bg-white p-5 shadow-sm sm:p-6">
 
@@ -552,8 +1408,6 @@ export default function ProfilePage() {
           </div>
 
           <div className="mt-5 grid gap-4 md:grid-cols-2">
-
-            {/* NEW PASSWORD */}
 
             <div>
 
@@ -580,8 +1434,6 @@ export default function ProfilePage() {
               />
 
             </div>
-
-            {/* CONFIRM PASSWORD */}
 
             <div>
 
@@ -610,8 +1462,6 @@ export default function ProfilePage() {
             </div>
 
           </div>
-
-          {/* MESSAGE */}
 
           {passwordMessage && (
             <div
@@ -741,7 +1591,7 @@ export default function ProfilePage() {
 
       {/* MOBILE NAV */}
 
-      <nav className="fixed bottom-0 left-0 right-0 z-50 border-t bg-white shadow-lg md:hidden">
+      <nav className="fixed bottom-0 left-0 right-0 z-40 border-t bg-white shadow-lg md:hidden">
 
         <div className="grid h-16 grid-cols-4">
 
@@ -800,6 +1650,230 @@ export default function ProfilePage() {
         </div>
 
       </nav>
+
+      {/* -------------------------------------------------------------- */}
+      {/* CROP MODAL                                                     */}
+      {/* -------------------------------------------------------------- */}
+
+      {cropImageUrl && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 p-4">
+
+          <div className="w-full max-w-md overflow-hidden rounded-3xl bg-white shadow-2xl">
+
+            <div className="border-b px-5 py-4">
+
+              <div className="flex items-center justify-between gap-4">
+
+                <div>
+
+                  <h2 className="text-xl font-black text-slate-950">
+                    Crop Profile Photo
+                  </h2>
+
+                  <p className="mt-1 text-xs font-semibold text-slate-500">
+                    Move the photo and zoom until the required area is inside the square.
+                  </p>
+
+                </div>
+
+                <button
+                  type="button"
+                  disabled={
+                    savingPhoto
+                  }
+                  onClick={
+                    closeCropper
+                  }
+                  className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-slate-100 text-xl font-black text-slate-700 hover:bg-slate-200"
+                >
+                  ×
+                </button>
+
+              </div>
+
+            </div>
+
+            <div className="p-5">
+
+              {/* CROPPER */}
+
+              <div className="mx-auto w-full max-w-[320px]">
+
+                <div
+                  onPointerDown={
+                    handlePointerDown
+                  }
+                  onPointerMove={
+                    handlePointerMove
+                  }
+                  onPointerUp={
+                    handlePointerEnd
+                  }
+                  onPointerCancel={
+                    handlePointerEnd
+                  }
+                  className={`relative aspect-square w-full touch-none overflow-hidden rounded-2xl bg-slate-950 ${
+                    dragging
+                      ? "cursor-grabbing"
+                      : "cursor-grab"
+                  }`}
+                >
+
+                  <img
+                    ref={
+                      cropImageRef
+                    }
+                    src={
+                      cropImageUrl
+                    }
+                    alt="Crop preview"
+                    draggable={false}
+                    onLoad={
+                      handleCropImageLoad
+                    }
+                    className="pointer-events-none absolute max-w-none select-none"
+                    style={{
+                      width:
+                        cropDisplayWidth ||
+                        undefined,
+
+                      height:
+                        cropDisplayHeight ||
+                        undefined,
+
+                      left:
+                        "50%",
+
+                      top:
+                        "50%",
+
+                      transform:
+                        `translate(-50%, -50%) translate(${offsetX}px, ${offsetY}px)`,
+                    }}
+                  />
+
+                  {/* CROP BORDER */}
+
+                  <div className="pointer-events-none absolute inset-0 rounded-2xl border-4 border-white shadow-[inset_0_0_0_1px_rgba(0,0,0,0.3)]" />
+
+                  {/* GRID */}
+
+                  <div className="pointer-events-none absolute left-1/3 top-0 h-full w-px bg-white/30" />
+
+                  <div className="pointer-events-none absolute left-2/3 top-0 h-full w-px bg-white/30" />
+
+                  <div className="pointer-events-none absolute left-0 top-1/3 h-px w-full bg-white/30" />
+
+                  <div className="pointer-events-none absolute left-0 top-2/3 h-px w-full bg-white/30" />
+
+                </div>
+
+              </div>
+
+              {/* ZOOM */}
+
+              <div className="mt-5">
+
+                <div className="flex items-center justify-between">
+
+                  <label
+                    htmlFor="photoZoom"
+                    className="text-sm font-black text-slate-800"
+                  >
+                    Zoom
+                  </label>
+
+                  <span className="text-sm font-bold text-blue-700">
+                    {Math.round(
+                      zoom *
+                        100
+                    )}
+                    %
+                  </span>
+
+                </div>
+
+                <div className="mt-2 flex items-center gap-3">
+
+                  <span className="text-lg">
+                    −
+                  </span>
+
+                  <input
+                    id="photoZoom"
+                    type="range"
+                    min="1"
+                    max="3"
+                    step="0.01"
+                    value={
+                      zoom
+                    }
+                    onChange={(
+                      event
+                    ) =>
+                      handleZoomChange(
+                        Number(
+                          event.target.value
+                        )
+                      )
+                    }
+                    className="w-full accent-blue-700"
+                  />
+
+                  <span className="text-lg">
+                    +
+                  </span>
+
+                </div>
+
+              </div>
+
+              <p className="mt-4 text-center text-xs font-semibold text-slate-500">
+                Drag the photo with your mouse or finger to position it.
+              </p>
+
+              {/* ACTIONS */}
+
+              <div className="mt-5 grid grid-cols-2 gap-3">
+
+                <button
+                  type="button"
+                  disabled={
+                    savingPhoto
+                  }
+                  onClick={
+                    closeCropper
+                  }
+                  className="rounded-xl border-2 border-slate-300 px-4 py-3 font-black text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+                >
+                  Cancel
+                </button>
+
+                <button
+                  type="button"
+                  disabled={
+                    savingPhoto ||
+                    !naturalWidth ||
+                    !naturalHeight
+                  }
+                  onClick={() =>
+                    void saveCroppedPhoto()
+                  }
+                  className="rounded-xl bg-blue-700 px-4 py-3 font-black text-white hover:bg-blue-800 disabled:cursor-not-allowed disabled:bg-slate-400"
+                >
+                  {savingPhoto
+                    ? "Saving..."
+                    : "Crop & Save"}
+                </button>
+
+              </div>
+
+            </div>
+
+          </div>
+
+        </div>
+      )}
 
     </main>
   );

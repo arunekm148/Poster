@@ -1711,17 +1711,136 @@ false
 /* LOAD IMAGE */
 /* ------------------------------------------------------------------------ */
 
-function loadImage(
+async function loadImage(
 source:
 string
 ): Promise<HTMLImageElement> {
-return new Promise(
+if (!source) {
+throw new Error(
+"Image URL is missing."
+);
+}
+
+/*
+|--------------------------------------------------------------------------
+| IMPORTANT: CANVAS-SAFE IMAGE LOADING
+|--------------------------------------------------------------------------
+|
+| Images stored on Supabase can be on a different origin from localhost.
+| Drawing a normal cross-origin <img> into canvas can taint the canvas and
+| make canvas.toDataURL() fail.
+|
+| We first fetch the image as a Blob and create a local blob: URL. The canvas
+| then draws that local object URL instead of the remote URL.
+|
+|--------------------------------------------------------------------------
+*/
+
+try {
+const response =
+await fetch(
+source,
+{
+method:
+"GET",
+
+mode:
+"cors",
+
+cache:
+"no-store",
+}
+);
+
+if (
+!response.ok
+) {
+throw new Error(
+`Image request failed with status ${response.status}.`
+);
+}
+
+const blob =
+await response.blob();
+
+const objectUrl =
+URL.createObjectURL(
+blob
+);
+
+try {
+return await new Promise<HTMLImageElement>(
 (
 resolve,
 reject
 ) => {
 const image =
 new Image();
+
+image.onload =
+() => {
+resolve(
+image
+);
+};
+
+image.onerror =
+() => {
+reject(
+new Error(
+"Unable to decode image."
+)
+);
+};
+
+image.src =
+objectUrl;
+}
+);
+} finally {
+/*
+ * The decoded image remains usable after the object URL is revoked.
+ */
+setTimeout(
+() => {
+try {
+URL.revokeObjectURL(
+objectUrl
+);
+} catch {}
+},
+0
+);
+}
+} catch (
+firstError
+) {
+/*
+|--------------------------------------------------------------------------
+| FALLBACK
+|--------------------------------------------------------------------------
+|
+| If Blob fetching is unavailable, retry with anonymous CORS. crossOrigin
+| MUST be set before src.
+|
+|--------------------------------------------------------------------------
+*/
+
+console.warn(
+"Blob image loading failed, retrying with anonymous CORS:",
+firstError
+);
+
+return await new Promise<HTMLImageElement>(
+(
+resolve,
+reject
+) => {
+const image =
+new Image();
+
+image.crossOrigin =
+"anonymous";
 
 image.onload =
 () =>
@@ -1733,7 +1852,7 @@ image.onerror =
 () =>
 reject(
 new Error(
-"Unable to load image."
+"Unable to load image for poster generation."
 )
 );
 
@@ -1741,6 +1860,7 @@ image.src =
 source;
 }
 );
+}
 }
 
 /* ------------------------------------------------------------------------ */
@@ -2291,6 +2411,85 @@ posterHeight +
 footerHeight *
 0.73
 );
+
+/* ------------------------------------------------------------------------ */
+/* SMALL VERTICAL WEBSITE WATERMARK                                         */
+/* ------------------------------------------------------------------------ */
+
+context.save();
+
+const watermarkText =
+"agentsindia.org";
+
+const watermarkSize =
+Math.max(
+16,
+Math.round(
+width *
+0.022
+)
+);
+
+context.font =
+`700 ${watermarkSize}px Arial`;
+
+context.textAlign =
+"center";
+
+context.textBaseline =
+"middle";
+
+/*
+ * Slightly stronger website watermark.
+ * Increase alpha in fillStyle if you want it even more visible.
+ */
+
+context.shadowColor =
+"rgba(0,0,0,0.65)";
+
+context.shadowBlur =
+Math.max(
+3,
+Math.round(
+width *
+0.004
+)
+);
+
+context.shadowOffsetX =
+0;
+
+context.shadowOffsetY =
+0;
+
+context.fillStyle =
+"rgba(255,255,255,0.62)";
+
+context.translate(
+width -
+Math.max(
+28,
+Math.round(
+width *
+0.04
+)
+),
+posterHeight /
+2
+);
+
+context.rotate(
+Math.PI /
+2
+);
+
+context.fillText(
+watermarkText,
+0,
+0
+);
+
+context.restore();
 
 return canvas.toDataURL(
 "image/png",
