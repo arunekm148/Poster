@@ -8,25 +8,8 @@ const adapter = new PrismaPg({
 
 const prisma = new PrismaClient({ adapter });
 
-/*
-|--------------------------------------------------------------------------
-| INSURANCE COMPANY MASTER
-|--------------------------------------------------------------------------
-|
-| Health + General/Motor + Life insurers
-|
-| Existing companies will NOT be duplicated.
-| New companies will be added.
-| Existing companies will be activated.
-|
-|--------------------------------------------------------------------------
-*/
-
 const companies = [
-  // ============================================================
   // HEALTH INSURANCE
-  // ============================================================
-
   "Aditya Birla Health Insurance Company Limited",
   "Care Health Insurance Limited",
   "Galaxy Health Insurance Company Limited",
@@ -34,10 +17,7 @@ const companies = [
   "Niva Bupa Health Insurance Company Limited",
   "Star Health and Allied Insurance Company Limited",
 
-  // ============================================================
   // GENERAL / MOTOR INSURANCE
-  // ============================================================
-
   "Acko General Insurance Limited",
   "Bajaj General Insurance Limited",
   "Cholamandalam MS General Insurance Company Limited",
@@ -64,10 +44,7 @@ const companies = [
   "Universal Sompo General Insurance Company Limited",
   "Zuno General Insurance Limited",
 
-  // ============================================================
   // LIFE INSURANCE
-  // ============================================================
-
   "Aditya Birla Sun Life Insurance Company Limited",
   "Ageas Federal Life Insurance Company Limited",
   "Aviva Life Insurance Company India Limited",
@@ -95,12 +72,6 @@ const companies = [
   "Tata AIA Life Insurance Company Limited",
 ];
 
-/*
-|--------------------------------------------------------------------------
-| MAIN SEED FUNCTION
-|--------------------------------------------------------------------------
-*/
-
 async function main() {
   console.log("");
   console.log("==============================================");
@@ -119,12 +90,6 @@ async function main() {
     });
 
     if (company) {
-      /*
-      |--------------------------------------------------------------------------
-      | COMPANY ALREADY EXISTS
-      |--------------------------------------------------------------------------
-      */
-
       if (!company.isActive) {
         await prisma.company.update({
           where: {
@@ -142,12 +107,6 @@ async function main() {
 
       existing++;
     } else {
-      /*
-      |--------------------------------------------------------------------------
-      | CREATE COMPANY
-      |--------------------------------------------------------------------------
-      */
-
       await prisma.company.create({
         data: {
           name,
@@ -156,16 +115,9 @@ async function main() {
       });
 
       console.log("Added:", name);
-
       added++;
     }
   }
-
-  /*
-  |--------------------------------------------------------------------------
-  | RESULT
-  |--------------------------------------------------------------------------
-  */
 
   const totalCompanies = await prisma.company.count({
     where: {
@@ -184,18 +136,11 @@ async function main() {
   console.log("");
 }
 
-/*
-|--------------------------------------------------------------------------
-| RUN
-|--------------------------------------------------------------------------
-*/
-
 main()
   .catch((error) => {
     console.error("");
     console.error("SEED ERROR:");
     console.error(error);
-
     process.exit(1);
   })
   .finally(async () => {

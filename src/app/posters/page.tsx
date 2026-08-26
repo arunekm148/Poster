@@ -410,6 +410,18 @@ useState(
 );
 
 /* ------------------------------------------------------------------------ */
+/* GENERAL POSTER PERSONALIZATION COMPANY                                  */
+/* ------------------------------------------------------------------------ */
+
+const [
+generalPosterCompanyChoices,
+setGeneralPosterCompanyChoices,
+] =
+useState<Record<string, string>>(
+{}
+);
+
+/* ------------------------------------------------------------------------ */
 /* UPLOAD */
 /* ------------------------------------------------------------------------ */
 
@@ -1189,6 +1201,47 @@ companies,
 uploadedPosterCompanyId,
 ]
 );
+
+function getGeneralPosterCompany(
+posterId: string
+) {
+const companyId =
+generalPosterCompanyChoices[
+posterId
+] ||
+"NONE";
+
+if (
+companyId ===
+"NONE"
+) {
+return null;
+}
+
+return (
+companies.find(
+(
+company
+) =>
+company.id ===
+companyId
+) ||
+null
+);
+}
+
+function setGeneralPosterCompany(
+posterId: string,
+companyId: string
+) {
+setGeneralPosterCompanyChoices(
+current => ({
+...current,
+[posterId]:
+companyId,
+})
+);
+}
 
 /* ------------------------------------------------------------------------ */
 /* FILTER POSTERS */
@@ -2022,14 +2075,29 @@ posterImage.naturalWidth;
 const posterHeight =
 posterImage.naturalHeight;
 
-const footerHeight =
+/*
+ * STYLE 1 — PREMIUM CARD
+ *
+ * The original poster remains untouched above.
+ * A clean white agent card is added below it with:
+ * - circular agent photo/logo
+ * - agent name + Insurance Specialist label
+ * - phone / WhatsApp-ready number
+ * - insurer / company branding on the right
+ * - large insurer/company logo on the right
+ */
+
+const cardHeight =
 Math.max(
-160,
+190,
 Math.round(
 width *
-0.18
+0.195
 )
 );
+
+const footerHeight =
+cardHeight;
 
 const canvas =
 document.createElement(
@@ -2054,6 +2122,10 @@ if (
 return null;
 }
 
+/* ---------------------------------------------------------------------- */
+/* ORIGINAL POSTER                                                        */
+/* ---------------------------------------------------------------------- */
+
 context.drawImage(
 posterImage,
 0,
@@ -2068,386 +2140,150 @@ width,
 posterHeight
 );
 
-const gradient =
-context.createLinearGradient(
-0,
-posterHeight,
-width,
-posterHeight
-);
+/* ---------------------------------------------------------------------- */
+/* SMALL HELPERS                                                          */
+/* ---------------------------------------------------------------------- */
 
-gradient.addColorStop(
-0,
-"#020617"
-);
+const drawImageCover = (
+image:
+HTMLImageElement,
+x:
+number,
+y:
+number,
+targetWidth:
+number,
+targetHeight:
+number
+) => {
+const sourceWidth =
+image.naturalWidth ||
+image.width;
 
-gradient.addColorStop(
-0.52,
-"#172554"
-);
+const sourceHeight =
+image.naturalHeight ||
+image.height;
 
-gradient.addColorStop(
-1,
-"#1d4ed8"
-);
+const sourceRatio =
+sourceWidth /
+sourceHeight;
 
-context.fillStyle =
-gradient;
+const targetRatio =
+targetWidth /
+targetHeight;
 
-context.fillRect(
-0,
-posterHeight,
-width,
-footerHeight
-);
+let sx =
+0;
 
-const padding =
-Math.round(
-width *
-0.035
-);
+let sy =
+0;
 
-const dividerX =
-width *
-0.48;
+let sw =
+sourceWidth;
 
-const companyAreaWidth =
-dividerX -
-padding *
-2;
-
-const companyLogoSize =
-Math.round(
-footerHeight *
-0.43
-);
-
-const companyLogoX =
-padding;
-
-const companyLogoY =
-posterHeight +
-Math.round(
-footerHeight *
-0.14
-);
+let sh =
+sourceHeight;
 
 if (
-companyLogoImage
+sourceRatio >
+targetRatio
 ) {
-context.fillStyle =
-"#ffffff";
+sw =
+sourceHeight *
+targetRatio;
 
-context.beginPath();
-
-context.roundRect(
-companyLogoX,
-companyLogoY,
-companyLogoSize,
-companyLogoSize,
-Math.round(
-companyLogoSize *
-0.12
-)
-);
-
-context.fill();
-
-const logoPadding =
-Math.round(
-companyLogoSize *
-0.09
-);
-
-context.drawImage(
-companyLogoImage,
-companyLogoX +
-logoPadding,
-companyLogoY +
-logoPadding,
-companyLogoSize -
-logoPadding *
-2,
-companyLogoSize -
-logoPadding *
-2
-);
-} else {
-context.fillStyle =
-"rgba(255,255,255,0.12)";
-
-context.beginPath();
-
-context.roundRect(
-companyLogoX,
-companyLogoY,
-companyLogoSize,
-companyLogoSize,
-Math.round(
-companyLogoSize *
-0.12
-)
-);
-
-context.fill();
-
-context.fillStyle =
-"#ffffff";
-
-context.textAlign =
-"center";
-
-context.textBaseline =
-"middle";
-
-context.font =
-`700 ${Math.max(
-22,
-Math.round(
-companyLogoSize *
-0.35
-)
-)}px Arial`;
-
-context.fillText(
-"INS",
-companyLogoX +
-companyLogoSize /
-2,
-companyLogoY +
-companyLogoSize /
-2
-);
-}
-
-context.textAlign =
-"left";
-
-context.textBaseline =
-"middle";
-
-context.fillStyle =
-"#ffffff";
-
-context.font =
-`700 ${Math.max(
-15,
-Math.round(
-footerHeight *
-0.105
-)
-)}px Arial`;
-
-const companyName =
-company?.name ||
-"General Insurance";
-
-const companyNameY =
-companyLogoY +
-companyLogoSize +
-Math.round(
-footerHeight *
-0.14
-);
-
-context.fillText(
-companyName,
-companyLogoX,
-companyNameY,
-companyAreaWidth
-);
-
-context.fillStyle =
-"rgba(255,255,255,0.28)";
-
-context.fillRect(
-dividerX,
-posterHeight +
-footerHeight *
-0.13,
-2,
-footerHeight *
-0.74
-);
-
-const agentStartX =
-dividerX +
-Math.round(
-width *
-0.035
-);
-
-let agentTextX =
-agentStartX;
-
-const agentLogoSize =
-Math.round(
-footerHeight *
-0.48
-);
-
-if (
-agentLogoImage
-) {
-const logoY =
-posterHeight +
+sx =
 (
-footerHeight -
-agentLogoSize
+sourceWidth -
+sw
 ) /
 2;
+} else {
+sh =
+sourceWidth /
+targetRatio;
 
-context.fillStyle =
-"#ffffff";
-
-context.beginPath();
-
-context.roundRect(
-agentStartX,
-logoY,
-agentLogoSize,
-agentLogoSize,
-Math.round(
-agentLogoSize *
-0.12
-)
-);
-
-context.fill();
-
-const logoPadding =
-Math.round(
-agentLogoSize *
-0.09
-);
-
-context.drawImage(
-agentLogoImage,
-agentStartX +
-logoPadding,
-logoY +
-logoPadding,
-agentLogoSize -
-logoPadding *
-2,
-agentLogoSize -
-logoPadding *
-2
-);
-
-agentTextX =
-agentStartX +
-agentLogoSize +
-Math.round(
-width *
-0.025
-);
+sy =
+(
+sourceHeight -
+sh
+) /
+2;
 }
 
-context.textAlign =
-"left";
-
-context.textBaseline =
-"middle";
-
-context.fillStyle =
-"#93c5fd";
-
-context.font =
-`800 ${Math.max(
-14,
-Math.round(
-footerHeight *
-0.095
-)
-)}px Arial`;
-
-context.fillText(
-"CONTACT US",
-agentTextX,
-posterHeight +
-footerHeight *
-0.23
+context.drawImage(
+image,
+sx,
+sy,
+sw,
+sh,
+x,
+y,
+targetWidth,
+targetHeight
 );
+};
 
-context.fillStyle =
-"#ffffff";
+const fitText = (
+text:
+string,
+maxWidth:
+number,
+startSize:
+number,
+minSize:
+number,
+weight =
+800
+) => {
+let size =
+startSize;
 
+while (
+size >
+minSize
+) {
 context.font =
-`800 ${Math.max(
-20,
-Math.round(
-footerHeight *
-0.16
-)
-)}px Arial`;
+`${weight} ${size}px Arial`;
 
-context.fillText(
-agentName,
-agentTextX,
-posterHeight +
-footerHeight *
-0.47
-);
+if (
+context.measureText(
+text
+).width <=
+maxWidth
+) {
+break;
+}
 
-context.fillStyle =
-"#ffffff";
+size -=
+1;
+}
 
-context.font =
-`900 ${Math.max(
-25,
-Math.round(
-footerHeight *
-0.205
-)
-)}px Arial`;
+return size;
+};
 
-context.fillText(
-displayPhone(
-agentMobile
-),
-agentTextX,
-posterHeight +
-footerHeight *
-0.73
-);
+/* ---------------------------------------------------------------------- */
+/* PREMIUM WHITE CARD                                                     */
+/* ---------------------------------------------------------------------- */
 
-/* ------------------------------------------------------------------------ */
-/* SMALL VERTICAL WEBSITE WATERMARK                                         */
-/* ------------------------------------------------------------------------ */
+const cardTop =
+posterHeight;
 
 context.save();
 
-const watermarkText =
-"agentsindia.org";
+context.shadowColor =
+"rgba(15, 23, 42, 0.18)";
 
-const watermarkSize =
+context.shadowBlur =
 Math.max(
-16,
+12,
 Math.round(
 width *
-0.022
+0.016
 )
 );
 
-context.font =
-`700 ${watermarkSize}px Arial`;
-
-context.textAlign =
-"center";
-
-context.textBaseline =
-"middle";
-
-/*
- * Slightly stronger website watermark.
- * Increase alpha in fillStyle if you want it even more visible.
- */
-
-context.shadowColor =
-"rgba(0,0,0,0.65)";
-
-context.shadowBlur =
+context.shadowOffsetY =
 Math.max(
 3,
 Math.round(
@@ -2456,40 +2292,647 @@ width *
 )
 );
 
-context.shadowOffsetX =
-0;
-
-context.shadowOffsetY =
-0;
-
 context.fillStyle =
-"rgba(255,255,255,0.62)";
+"#ffffff";
 
-context.translate(
-width -
-Math.max(
-28,
-Math.round(
-width *
-0.04
-)
-),
-posterHeight /
-2
-);
-
-context.rotate(
-Math.PI /
-2
-);
-
-context.fillText(
-watermarkText,
+context.fillRect(
 0,
-0
+cardTop,
+width,
+cardHeight
 );
 
 context.restore();
+
+/* subtle top accent */
+
+const accentHeight =
+Math.max(
+5,
+Math.round(
+width *
+0.006
+)
+);
+
+const accentGradient =
+context.createLinearGradient(
+0,
+cardTop,
+width,
+cardTop
+);
+
+accentGradient.addColorStop(
+0,
+"#0f172a"
+);
+
+accentGradient.addColorStop(
+0.48,
+"#1d4ed8"
+);
+
+accentGradient.addColorStop(
+1,
+"#2563eb"
+);
+
+context.fillStyle =
+accentGradient;
+
+context.fillRect(
+0,
+cardTop,
+width,
+accentHeight
+);
+
+/* ---------------------------------------------------------------------- */
+/* AGENT PHOTO / LOGO                                                     */
+/* ---------------------------------------------------------------------- */
+
+const horizontalPadding =
+Math.round(
+width *
+0.035
+);
+
+const avatarSize =
+Math.min(
+Math.round(
+cardHeight *
+0.70
+),
+Math.round(
+width *
+0.145
+)
+);
+
+const avatarX =
+horizontalPadding;
+
+const avatarY =
+cardTop +
+(
+cardHeight -
+avatarSize
+) /
+2 +
+accentHeight /
+2;
+
+context.save();
+
+context.beginPath();
+
+context.arc(
+avatarX +
+avatarSize /
+2,
+avatarY +
+avatarSize /
+2,
+avatarSize /
+2,
+0,
+Math.PI *
+2
+);
+
+context.closePath();
+
+context.clip();
+
+if (
+agentLogoImage
+) {
+drawImageCover(
+agentLogoImage,
+avatarX,
+avatarY,
+avatarSize,
+avatarSize
+);
+} else {
+const avatarGradient =
+context.createLinearGradient(
+avatarX,
+avatarY,
+avatarX +
+avatarSize,
+avatarY +
+avatarSize
+);
+
+avatarGradient.addColorStop(
+0,
+"#dbeafe"
+);
+
+avatarGradient.addColorStop(
+1,
+"#bfdbfe"
+);
+
+context.fillStyle =
+avatarGradient;
+
+context.fillRect(
+avatarX,
+avatarY,
+avatarSize,
+avatarSize
+);
+
+context.fillStyle =
+"#1e3a8a";
+
+context.textAlign =
+"center";
+
+context.textBaseline =
+"middle";
+
+context.font =
+`900 ${Math.max(
+30,
+Math.round(
+avatarSize *
+0.34
+)
+)}px Arial`;
+
+const initials =
+agentName
+.split(
+" "
+)
+.filter(
+Boolean
+)
+.slice(
+0,
+2
+)
+.map(
+(part) =>
+part.charAt(
+0
+).toUpperCase()
+)
+.join(
+""
+) ||
+"AI";
+
+context.fillText(
+initials,
+avatarX +
+avatarSize /
+2,
+avatarY +
+avatarSize /
+2
+);
+}
+
+context.restore();
+
+/* avatar ring */
+
+context.beginPath();
+
+context.arc(
+avatarX +
+avatarSize /
+2,
+avatarY +
+avatarSize /
+2,
+avatarSize /
+2 -
+1,
+0,
+Math.PI *
+2
+);
+
+context.strokeStyle =
+"#dbeafe";
+
+context.lineWidth =
+Math.max(
+3,
+Math.round(
+width *
+0.004
+)
+);
+
+context.stroke();
+
+/* ---------------------------------------------------------------------- */
+/* AGENT TEXT                                                             */
+/* ---------------------------------------------------------------------- */
+
+const agentTextX =
+avatarX +
+avatarSize +
+Math.round(
+width *
+0.028
+);
+
+const rightAreaWidth =
+Math.round(
+width *
+0.30
+);
+
+const dividerGap =
+Math.round(
+width *
+0.024
+);
+
+const dividerX =
+width -
+horizontalPadding -
+rightAreaWidth -
+dividerGap;
+
+const agentTextMaxWidth =
+dividerX -
+agentTextX -
+Math.round(
+width *
+0.018
+);
+
+context.textAlign =
+"left";
+
+context.textBaseline =
+"alphabetic";
+
+const nameFontSize =
+fitText(
+agentName,
+agentTextMaxWidth,
+Math.max(
+28,
+Math.round(
+cardHeight *
+0.19
+)
+),
+Math.max(
+19,
+Math.round(
+cardHeight *
+0.125
+)
+),
+900
+);
+
+context.font =
+`900 ${nameFontSize}px Arial`;
+
+context.fillStyle =
+"#0f172a";
+
+context.fillText(
+agentName,
+agentTextX,
+cardTop +
+cardHeight *
+0.39
+);
+
+context.font =
+`700 ${Math.max(
+15,
+Math.round(
+cardHeight *
+0.09
+)
+)}px Arial`;
+
+context.fillStyle =
+"#475569";
+
+context.fillText(
+"Insurance Specialist",
+agentTextX,
+cardTop +
+cardHeight *
+0.56
+);
+
+/* phone icon circle */
+
+const phoneCircleSize =
+Math.max(
+28,
+Math.round(
+cardHeight *
+0.16
+)
+);
+
+const phoneCircleX =
+agentTextX;
+
+const phoneCircleY =
+cardTop +
+cardHeight *
+0.69;
+
+context.beginPath();
+
+context.arc(
+phoneCircleX +
+phoneCircleSize /
+2,
+phoneCircleY,
+phoneCircleSize /
+2,
+0,
+Math.PI *
+2
+);
+
+context.fillStyle =
+"#eff6ff";
+
+context.fill();
+
+context.textAlign =
+"center";
+
+context.textBaseline =
+"middle";
+
+context.font =
+`900 ${Math.max(
+15,
+Math.round(
+phoneCircleSize *
+0.52
+)
+)}px Arial`;
+
+context.fillStyle =
+"#1d4ed8";
+
+context.fillText(
+"☎",
+phoneCircleX +
+phoneCircleSize /
+2,
+phoneCircleY +
+1
+);
+
+const phoneText =
+displayPhone(
+agentMobile
+) ||
+"Contact Agent";
+
+const phoneTextX =
+phoneCircleX +
+phoneCircleSize +
+Math.round(
+width *
+0.012
+);
+
+const phoneFontSize =
+fitText(
+phoneText,
+Math.max(
+60,
+dividerX -
+phoneTextX -
+Math.round(
+width *
+0.014
+)
+),
+Math.max(
+23,
+Math.round(
+cardHeight *
+0.14
+)
+),
+Math.max(
+16,
+Math.round(
+cardHeight *
+0.10
+)
+),
+900
+);
+
+context.textAlign =
+"left";
+
+context.textBaseline =
+"middle";
+
+context.font =
+`900 ${phoneFontSize}px Arial`;
+
+context.fillStyle =
+"#0f172a";
+
+context.fillText(
+phoneText,
+phoneTextX,
+phoneCircleY
+);
+
+/* tiny WhatsApp-style green dot */
+
+const whatsappDot =
+Math.max(
+12,
+Math.round(
+cardHeight *
+0.068
+)
+);
+
+const phoneWidth =
+context.measureText(
+phoneText
+).width;
+
+const whatsappX =
+Math.min(
+dividerX -
+whatsappDot -
+Math.round(
+width *
+0.008
+),
+phoneTextX +
+phoneWidth +
+Math.round(
+width *
+0.012
+)
+);
+
+context.beginPath();
+
+context.arc(
+whatsappX,
+phoneCircleY,
+whatsappDot /
+2,
+0,
+Math.PI *
+2
+);
+
+context.fillStyle =
+"#16a34a";
+
+context.fill();
+
+context.textAlign =
+"center";
+
+context.textBaseline =
+"middle";
+
+context.font =
+`900 ${Math.max(
+8,
+Math.round(
+whatsappDot *
+0.52
+)
+)}px Arial`;
+
+context.fillStyle =
+"#ffffff";
+
+context.fillText(
+"✓",
+whatsappX,
+phoneCircleY +
+0.5
+);
+
+/* ---------------------------------------------------------------------- */
+/* DIVIDER                                                                */
+/* ---------------------------------------------------------------------- */
+
+context.fillStyle =
+"#e2e8f0";
+
+context.fillRect(
+dividerX,
+cardTop +
+cardHeight *
+0.20,
+Math.max(
+1,
+Math.round(
+width *
+0.0015
+)
+),
+cardHeight *
+0.60
+);
+
+/* ---------------------------------------------------------------------- */
+/* COMPANY / INSURER AREA                                                 */
+/* ---------------------------------------------------------------------- */
+
+const companyAreaX =
+dividerX +
+dividerGap;
+
+const companyAreaMaxWidth =
+width -
+horizontalPadding -
+companyAreaX;
+
+const companyLogoMaxWidth =
+companyAreaMaxWidth *
+0.96;
+
+const companyLogoMaxHeight =
+cardHeight *
+0.68;
+
+if (
+companyLogoImage
+) {
+const logoNaturalWidth =
+companyLogoImage.naturalWidth ||
+companyLogoImage.width;
+
+const logoNaturalHeight =
+companyLogoImage.naturalHeight ||
+companyLogoImage.height;
+
+const scale =
+Math.min(
+companyLogoMaxWidth /
+logoNaturalWidth,
+companyLogoMaxHeight /
+logoNaturalHeight,
+1
+);
+
+const logoDrawWidth =
+logoNaturalWidth *
+scale;
+
+const logoDrawHeight =
+logoNaturalHeight *
+scale;
+
+const logoDrawX =
+companyAreaX +
+(
+companyAreaMaxWidth -
+logoDrawWidth
+) /
+2;
+
+/* Center the company logo vertically in the right-side company area. */
+const logoDrawY =
+cardTop +
+(
+cardHeight -
+logoDrawHeight
+) /
+2;
+
+context.drawImage(
+companyLogoImage,
+logoDrawX,
+logoDrawY,
+logoDrawWidth,
+logoDrawHeight
+);
+}
+
+/* ---------------------------------------------------------------------- */
+/* NO AGENTS INDIA FOOTER / WEBSITE BRANDING IS ADDED TO THE FINAL IMAGE */
+/* ---------------------------------------------------------------------- */
 
 return canvas.toDataURL(
 "image/png",
@@ -2657,7 +3100,9 @@ poster.company
 .logoUrl ||
 null,
 }
-: null;
+: getGeneralPosterCompany(
+poster.id
+);
 
 const image =
 await createPersonalizedPoster(
@@ -4040,6 +4485,18 @@ userRating:
 0,
 };
 
+const generalSelectedCompany =
+!poster.company?.id
+? getGeneralPosterCompany(
+poster.id
+)
+: null;
+
+const previewCompany =
+poster.company?.id
+? poster.company
+: generalSelectedCompany;
+
 return (
 <article
 key={
@@ -4080,16 +4537,16 @@ maskText
 
 <div className="flex flex-col items-start justify-center border-r border-white/25 pr-3">
 
-{poster.company
+{previewCompany
 ?.logoUrl ? (
-<div className="flex h-12 w-12 items-center justify-center overflow-hidden rounded-lg bg-white p-1">
+<div className="flex h-14 w-20 items-center justify-center overflow-hidden rounded-lg bg-white p-1.5">
 
 <img
 src={
-poster.company.logoUrl
+previewCompany.logoUrl
 }
 alt={
-poster.company.name ||
+previewCompany.name ||
 "Insurance company"
 }
 className="max-h-full max-w-full object-contain"
@@ -4103,9 +4560,11 @@ className="max-h-full max-w-full object-contain"
 )}
 
 <p className="mt-2 text-[10px] font-black leading-tight text-white">
-{poster.company
-?.name ||
-"General Insurance"}
+{poster.company?.name
+? poster.company.name
+: generalSelectedCompany?.name
+? generalSelectedCompany.name
+: "General Poster"}
 </p>
 
 </div>
@@ -4186,6 +4645,95 @@ Added{" "}
 poster.createdAt
 )}
 </p>
+)}
+
+{!poster.company?.id && (
+<div className="mt-4 rounded-2xl border-2 border-blue-100 bg-blue-50 p-3.5">
+
+<div className="flex items-center justify-between gap-3">
+
+<div>
+
+<p className="text-[10px] font-black uppercase tracking-wide text-blue-700">
+General Poster Personalization
+</p>
+
+<p className="mt-0.5 text-xs font-bold text-slate-600">
+Choose the company logo for this download.
+</p>
+
+</div>
+
+{generalSelectedCompany?.logoUrl && (
+<div className="flex h-14 w-24 shrink-0 items-center justify-center rounded-xl border border-blue-100 bg-white p-2 shadow-sm">
+
+<img
+src={
+generalSelectedCompany.logoUrl
+}
+alt={
+generalSelectedCompany.name
+}
+className="max-h-full max-w-full object-contain"
+/>
+
+</div>
+)}
+
+</div>
+
+<select
+value={
+generalPosterCompanyChoices[
+poster.id
+] ||
+"NONE"
+}
+onChange={(
+event
+) =>
+setGeneralPosterCompany(
+poster.id,
+event.target.value
+)
+}
+className="mt-3 w-full rounded-xl border-2 border-blue-200 bg-white px-3 py-3 text-sm font-black text-slate-950 outline-none focus:border-blue-700"
+>
+
+<option value="NONE">
+No Company Logo
+</option>
+
+{companies.map(
+(
+company
+) => (
+<option
+key={
+company.id
+}
+value={
+company.id
+}
+>
+{company.name}
+</option>
+)
+)}
+
+</select>
+
+{generalSelectedCompany ? (
+<p className="mt-2 text-xs font-black text-blue-800">
+✓ {generalSelectedCompany.name} logo will be added to the personalized poster.
+</p>
+) : (
+<p className="mt-2 text-xs font-bold text-slate-500">
+The poster will download without a company logo.
+</p>
+)}
+
+</div>
 )}
 
 <div className="mt-4 rounded-2xl border border-amber-100 bg-amber-50 p-3">
