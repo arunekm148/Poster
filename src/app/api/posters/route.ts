@@ -45,8 +45,7 @@ async function findAdmin(
 function getCleanString(
   value: unknown
 ) {
-  return typeof value ===
-    "string"
+  return typeof value === "string"
     ? value.trim()
     : "";
 }
@@ -62,21 +61,131 @@ function getCreditAmount(
     return 0;
   }
 
-  const amount =
-    Number(value);
+  const amount = Number(value);
 
   if (
-    !Number.isFinite(
-      amount
-    ) ||
+    !Number.isFinite(amount) ||
     amount < 0
   ) {
     return null;
   }
 
-  return Math.round(
-    amount * 100
-  ) / 100;
+  return Math.round(amount * 100) / 100;
+}
+
+function slugifyCategory(
+  value: string
+) {
+  return value
+    .trim()
+    .toLowerCase()
+    .replace(/&/g, "and")
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+}
+
+/*
+|--------------------------------------------------------------------------
+| FIND OR CREATE POSTER CATEGORY
+|--------------------------------------------------------------------------
+|
+| Your database reset intentionally cleared Category records. Because the
+| poster page sends categoryName such as "Health Insurance", the old API
+| returned "Poster category not found." after a reset.
+|
+| This helper safely recreates the category when it is missing.
+|
+|--------------------------------------------------------------------------
+*/
+
+async function resolveCategory({
+  categoryId,
+  categoryName,
+}: {
+  categoryId?: string;
+  categoryName?: string;
+}) {
+  const cleanId = getCleanString(categoryId);
+  const cleanName = getCleanString(categoryName);
+
+  if (cleanId) {
+    const byId =
+      await prisma.category.findFirst({
+        where: {
+          id: cleanId,
+          isActive: true,
+        },
+
+        select: {
+          id: true,
+          name: true,
+          slug: true,
+        },
+      });
+
+    if (byId) {
+      return byId;
+    }
+  }
+
+  if (!cleanName) {
+    return null;
+  }
+
+  const byName =
+    await prisma.category.findFirst({
+      where: {
+        name: {
+          equals: cleanName,
+          mode: "insensitive",
+        },
+
+        isActive: true,
+      },
+
+      select: {
+        id: true,
+        name: true,
+        slug: true,
+      },
+    });
+
+  if (byName) {
+    return byName;
+  }
+
+  const slug =
+    slugifyCategory(cleanName);
+
+  if (!slug) {
+    return null;
+  }
+
+  /*
+   * Upsert by slug prevents duplicates if two requests arrive together.
+   */
+  return prisma.category.upsert({
+    where: {
+      slug,
+    },
+
+    create: {
+      name: cleanName,
+      slug,
+      isActive: true,
+    },
+
+    update: {
+      name: cleanName,
+      isActive: true,
+    },
+
+    select: {
+      id: true,
+      name: true,
+      slug: true,
+    },
+  });
 }
 
 /* -------------------------------------------------------------------------- */
@@ -89,149 +198,82 @@ export async function GET(
   try {
     const {
       searchParams,
-    } =
-      new URL(
-        request.url
-      );
+    } = new URL(request.url);
 
     const categoryId =
-      searchParams
-        .get(
-          "categoryId"
-        )
-        ?.trim() ||
-      "";
+      searchParams.get("categoryId")?.trim() || "";
 
     const companyId =
-      searchParams
-        .get(
-          "companyId"
-        )
-        ?.trim() ||
-      "";
+      searchParams.get("companyId")?.trim() || "";
 
     const source =
-      searchParams
-        .get(
-          "source"
-        )
-        ?.trim()
-        .toUpperCase() ||
-      "";
+      searchParams.get("source")?.trim().toUpperCase() || "";
 
     const userId =
-      searchParams
-        .get(
-          "userId"
-        )
-        ?.trim() ||
-      "";
+      searchParams.get("userId")?.trim() || "";
 
     const pending =
-      searchParams.get(
-        "pending"
-      ) ===
-      "true";
+      searchParams.get("pending") === "true";
 
     const requestedStatus =
-      searchParams
-        .get(
-          "status"
-        )
-        ?.trim()
-        .toUpperCase() ||
-      "";
-
-    /* ---------------------------------------------------------------------- */
-    /* PENDING APPROVAL                                                       */
-    /* ---------------------------------------------------------------------- */
+      searchParams.get("status")?.trim().toUpperCase() || "";
 
     if (pending) {
       const posters =
         await prisma.media.findMany({
           where: {
-            isActive:
-              true,
-
-            approvalStatus:
-              "PENDING",
+            isActive: true,
+            approvalStatus: "PENDING",
           },
 
           include: {
-            company:
-              true,
-
-            category:
-              true,
+            company: true,
+            category: true,
 
             uploadedBy: {
               select: {
-                id:
-                  true,
-
-                name:
-                  true,
-
-                phone:
-                  true,
-
-                email:
-                  true,
-
-                logoUrl:
-                  true,
+                id: true,
+                name: true,
+                phone: true,
+                email: true,
+                logoUrl: true,
               },
             },
 
             approvedBy: {
               select: {
-                id:
-                  true,
-
-                name:
-                  true,
+                id: true,
+                name: true,
               },
             },
 
             _count: {
               select: {
-                downloads:
-                  true,
+                downloads: true,
               },
             },
           },
 
           orderBy: {
-            createdAt:
-              "desc",
+            createdAt: "desc",
           },
         });
 
       return NextResponse.json({
-        success:
-          true,
-
+        success: true,
         posters,
       });
     }
 
-    /* ---------------------------------------------------------------------- */
-    /* STATUS FILTER                                                          */
-    /* ---------------------------------------------------------------------- */
-
     if (
-      requestedStatus ===
-        "REJECTED" ||
-      requestedStatus ===
-        "PENDING" ||
-      requestedStatus ===
-        "APPROVED"
+      requestedStatus === "REJECTED" ||
+      requestedStatus === "PENDING" ||
+      requestedStatus === "APPROVED"
     ) {
       const posters =
         await prisma.media.findMany({
           where: {
-            isActive:
-              true,
+            isActive: true,
 
             approvalStatus:
               requestedStatus as
@@ -239,10 +281,7 @@ export async function GET(
                 | "PENDING"
                 | "APPROVED",
 
-            ...(source ===
-              "ADMIN" ||
-            source ===
-              "AGENT"
+            ...(source === "ADMIN" || source === "AGENT"
               ? {
                   source:
                     source as PosterSource,
@@ -258,75 +297,49 @@ export async function GET(
           },
 
           include: {
-            company:
-              true,
-
-            category:
-              true,
+            company: true,
+            category: true,
 
             uploadedBy: {
               select: {
-                id:
-                  true,
-
-                name:
-                  true,
-
-                phone:
-                  true,
-
-                email:
-                  true,
-
-                logoUrl:
-                  true,
+                id: true,
+                name: true,
+                phone: true,
+                email: true,
+                logoUrl: true,
               },
             },
 
             approvedBy: {
               select: {
-                id:
-                  true,
-
-                name:
-                  true,
+                id: true,
+                name: true,
               },
             },
 
             _count: {
               select: {
-                downloads:
-                  true,
+                downloads: true,
               },
             },
           },
 
           orderBy: {
-            createdAt:
-              "desc",
+            createdAt: "desc",
           },
         });
 
       return NextResponse.json({
-        success:
-          true,
-
+        success: true,
         posters,
       });
     }
 
-    /* ---------------------------------------------------------------------- */
-    /* APPROVED POSTER LIBRARY                                                */
-    /* ---------------------------------------------------------------------- */
-
     const posters =
       await prisma.media.findMany({
         where: {
-          isActive:
-            true,
-
-          approvalStatus:
-            "APPROVED",
+          isActive: true,
+          approvalStatus: "APPROVED",
 
           ...(categoryId
             ? {
@@ -334,11 +347,9 @@ export async function GET(
               }
             : {}),
 
-          ...(companyId ===
-          "GENERAL"
+          ...(companyId === "GENERAL"
             ? {
-                companyId:
-                  null,
+                companyId: null,
               }
             : companyId
             ? {
@@ -346,10 +357,7 @@ export async function GET(
               }
             : {}),
 
-          ...(source ===
-            "ADMIN" ||
-          source ===
-            "AGENT"
+          ...(source === "ADMIN" || source === "AGENT"
             ? {
                 source:
                   source as PosterSource,
@@ -365,64 +373,43 @@ export async function GET(
         },
 
         include: {
-          company:
-            true,
-
-          category:
-            true,
+          company: true,
+          category: true,
 
           uploadedBy: {
             select: {
-              id:
-                true,
-
-              name:
-                true,
-
-              phone:
-                true,
-
-              email:
-                true,
-
-              logoUrl:
-                true,
+              id: true,
+              name: true,
+              phone: true,
+              email: true,
+              logoUrl: true,
             },
           },
 
           approvedBy: {
             select: {
-              id:
-                true,
-
-              name:
-                true,
+              id: true,
+              name: true,
             },
           },
 
           _count: {
             select: {
-              downloads:
-                true,
+              downloads: true,
             },
           },
         },
 
         orderBy: {
-          createdAt:
-            "desc",
+          createdAt: "desc",
         },
       });
 
     return NextResponse.json({
-      success:
-        true,
-
+      success: true,
       posters,
     });
-  } catch (
-    error
-  ) {
+  } catch (error) {
     console.error(
       "GET POSTERS ERROR:",
       error
@@ -430,15 +417,11 @@ export async function GET(
 
     return NextResponse.json(
       {
-        success:
-          false,
-
-        message:
-          "Unable to load posters.",
+        success: false,
+        message: "Unable to load posters.",
       },
       {
-        status:
-          500,
+        status: 500,
       }
     );
   }
@@ -456,74 +439,46 @@ export async function POST(
       await request.json();
 
     const title =
-      getCleanString(
-        body.title
-      );
+      getCleanString(body.title);
 
     const fileUrl =
-      getCleanString(
-        body.fileUrl
-      );
+      getCleanString(body.fileUrl);
 
     const thumbnailUrl =
-      getCleanString(
-        body.thumbnailUrl
-      );
+      getCleanString(body.thumbnailUrl);
 
     const companyId =
-      getCleanString(
-        body.companyId
-      );
+      getCleanString(body.companyId);
 
     const categoryId =
-      getCleanString(
-        body.categoryId
-      );
+      getCleanString(body.categoryId);
 
     const companyName =
-      getCleanString(
-        body.companyName
-      );
+      getCleanString(body.companyName);
 
     const categoryName =
-      getCleanString(
-        body.categoryName
-      );
+      getCleanString(body.categoryName);
 
     const uploadedByUserId =
-      getCleanString(
-        body.uploadedByUserId
-      );
+      getCleanString(body.uploadedByUserId);
 
     const requestedSource =
-      getCleanString(
-        body.source
-      ).toUpperCase() ||
+      getCleanString(body.source).toUpperCase() ||
       "ADMIN";
 
-    const source:
-      PosterSource =
-      requestedSource ===
-      "AGENT"
+    const source: PosterSource =
+      requestedSource === "AGENT"
         ? "AGENT"
         : "ADMIN";
-
-    /* ---------------------------------------------------------------------- */
-    /* VALIDATION                                                             */
-    /* ---------------------------------------------------------------------- */
 
     if (!title) {
       return NextResponse.json(
         {
-          success:
-            false,
-
-          message:
-            "Poster title is required.",
+          success: false,
+          message: "Poster title is required.",
         },
         {
-          status:
-            400,
+          status: 400,
         }
       );
     }
@@ -531,198 +486,122 @@ export async function POST(
     if (!fileUrl) {
       return NextResponse.json(
         {
-          success:
-            false,
-
-          message:
-            "Poster file URL is required.",
+          success: false,
+          message: "Poster file URL is required.",
         },
         {
-          status:
-            400,
+          status: 400,
         }
       );
     }
 
-    /* ---------------------------------------------------------------------- */
-    /* CATEGORY                                                               */
-    /* ---------------------------------------------------------------------- */
-
-    let category =
-      null;
-
-    if (categoryId) {
-      category =
-        await prisma.category.findFirst({
-          where: {
-            id:
-              categoryId,
-
-            isActive:
-              true,
-          },
-        });
-    } else if (
-      categoryName
-    ) {
-      category =
-        await prisma.category.findFirst({
-          where: {
-            name: {
-              equals:
-                categoryName,
-
-              mode:
-                "insensitive",
-            },
-
-            isActive:
-              true,
-          },
-        });
-    }
+    const category =
+      await resolveCategory({
+        categoryId,
+        categoryName,
+      });
 
     if (!category) {
       return NextResponse.json(
         {
-          success:
-            false,
-
+          success: false,
           message:
-            "Poster category not found.",
+            "Poster category is required.",
         },
         {
-          status:
-            400,
+          status: 400,
         }
       );
     }
 
-    /* ---------------------------------------------------------------------- */
-    /* COMPANY                                                                */
-    /* ---------------------------------------------------------------------- */
-
     let company:
       | {
-          id:
-            string;
-
-          name:
-            string;
+          id: string;
+          name: string;
         }
-      | null =
-      null;
+      | null = null;
 
     if (
       companyId &&
-      companyId !==
-        "GENERAL"
+      companyId !== "GENERAL"
     ) {
       company =
         await prisma.company.findFirst({
           where: {
-            id:
-              companyId,
-
-            isActive:
-              true,
+            id: companyId,
+            isActive: true,
           },
 
           select: {
-            id:
-              true,
-
-            name:
-              true,
+            id: true,
+            name: true,
           },
         });
 
       if (!company) {
         return NextResponse.json(
           {
-            success:
-              false,
-
+            success: false,
             message:
               "Selected insurance company was not found.",
           },
           {
-            status:
-              400,
+            status: 400,
           }
         );
       }
     } else if (
       companyName &&
-      companyName.toUpperCase() !==
-        "GENERAL"
+      companyName.toUpperCase() !== "GENERAL"
     ) {
       company =
         await prisma.company.findFirst({
           where: {
             name: {
-              equals:
-                companyName,
-
-              mode:
-                "insensitive",
+              equals: companyName,
+              mode: "insensitive",
             },
 
-            isActive:
-              true,
+            isActive: true,
           },
 
           select: {
-            id:
-              true,
-
-            name:
-              true,
+            id: true,
+            name: true,
           },
         });
 
       if (!company) {
         return NextResponse.json(
           {
-            success:
-              false,
-
+            success: false,
             message:
               "Selected insurance company was not found.",
           },
           {
-            status:
-              400,
+            status: 400,
           }
         );
       }
     }
 
-    /* ---------------------------------------------------------------------- */
-    /* AGENT CONTRIBUTOR                                                      */
-    /* ---------------------------------------------------------------------- */
+    let contributor:
+      | {
+          id: string;
+          name: string;
+        }
+      | null = null;
 
-    let contributor =
-      null;
-
-    if (
-      source ===
-      "AGENT"
-    ) {
-      if (
-        !uploadedByUserId
-      ) {
+    if (source === "AGENT") {
+      if (!uploadedByUserId) {
         return NextResponse.json(
           {
-            success:
-              false,
-
+            success: false,
             message:
               "Agent user ID is required for agent poster submission.",
           },
           {
-            status:
-              400,
+            status: 400,
           }
         );
       }
@@ -730,49 +609,33 @@ export async function POST(
       contributor =
         await prisma.user.findFirst({
           where: {
-            id:
-              uploadedByUserId,
-
-            isActive:
-              true,
-
-            role:
-              "AGENT",
+            id: uploadedByUserId,
+            isActive: true,
+            role: "AGENT",
           },
 
           select: {
-            id:
-              true,
-
-            name:
-              true,
+            id: true,
+            name: true,
           },
         });
 
       if (!contributor) {
         return NextResponse.json(
           {
-            success:
-              false,
-
+            success: false,
             message:
               "Agent account was not found.",
           },
           {
-            status:
-              400,
+            status: 400,
           }
         );
       }
     }
 
-    /* ---------------------------------------------------------------------- */
-    /* CREATE                                                                 */
-    /* ---------------------------------------------------------------------- */
-
     const approvalStatus =
-      source ===
-      "AGENT"
+      source === "AGENT"
         ? "PENDING"
         : "APPROVED";
 
@@ -780,80 +643,54 @@ export async function POST(
       await prisma.media.create({
         data: {
           title,
-
           fileUrl,
 
           thumbnailUrl:
-            thumbnailUrl ||
-            null,
+            thumbnailUrl || null,
 
           categoryId:
             category.id,
 
           companyId:
-            company?.id ||
-            null,
+            company?.id || null,
 
           source,
 
           uploadedByUserId:
-            source ===
-            "AGENT"
-              ? contributor?.id ||
-                null
+            source === "AGENT"
+              ? contributor?.id || null
               : null,
 
           approvalStatus,
 
           approvedAt:
-            source ===
-            "ADMIN"
+            source === "ADMIN"
               ? new Date()
               : null,
 
-          rejectionReason:
-            null,
-
-          creditAmount:
-            null,
-
-          creditedAt:
-            null,
-
-          isActive:
-            true,
+          rejectionReason: null,
+          creditAmount: null,
+          creditedAt: null,
+          isActive: true,
         },
 
         include: {
-          company:
-            true,
-
-          category:
-            true,
+          company: true,
+          category: true,
 
           uploadedBy: {
             select: {
-              id:
-                true,
-
-              name:
-                true,
-
-              phone:
-                true,
-
-              email:
-                true,
-
-              logoUrl:
-                true,
+              id: true,
+              name: true,
+              phone: true,
+              email: true,
+              logoUrl: true,
             },
           },
 
           _count: {
             select: {
-              downloads:
-                true,
+              downloads: true,
             },
           },
         },
@@ -861,25 +698,20 @@ export async function POST(
 
     return NextResponse.json(
       {
-        success:
-          true,
+        success: true,
 
         message:
-          source ===
-          "AGENT"
+          source === "AGENT"
             ? "Poster submitted successfully and is waiting for admin approval."
             : "Poster published successfully.",
 
         poster,
       },
       {
-        status:
-          201,
+        status: 201,
       }
     );
-  } catch (
-    error
-  ) {
+  } catch (error) {
     console.error(
       "CREATE POSTER ERROR:",
       error
@@ -887,15 +719,11 @@ export async function POST(
 
     return NextResponse.json(
       {
-        success:
-          false,
-
-        message:
-          "Unable to add poster.",
+        success: false,
+        message: "Unable to add poster.",
       },
       {
-        status:
-          500,
+        status: 500,
       }
     );
   }
@@ -913,32 +741,22 @@ export async function PATCH(
       await request.json();
 
     const id =
-      getCleanString(
-        body.id
-      );
+      getCleanString(body.id);
 
     const action =
-      getCleanString(
-        body.action
-      ).toUpperCase() as PosterAction;
+      getCleanString(body.action).toUpperCase() as PosterAction;
 
     const approvedByUserId =
-      getCleanString(
-        body.approvedByUserId
-      );
+      getCleanString(body.approvedByUserId);
 
     if (!id) {
       return NextResponse.json(
         {
-          success:
-            false,
-
-          message:
-            "Poster ID is required.",
+          success: false,
+          message: "Poster ID is required.",
         },
         {
-          status:
-            400,
+          status: 400,
         }
       );
     }
@@ -950,76 +768,36 @@ export async function PATCH(
         },
 
         select: {
-          id:
-            true,
-
-          title:
-            true,
-
-          fileUrl:
-            true,
-
-          thumbnailUrl:
-            true,
-
-          source:
-            true,
-
-          uploadedByUserId:
-            true,
-
-          approvalStatus:
-            true,
-
-          rejectionReason:
-            true,
-
-          categoryId:
-            true,
-
-          companyId:
-            true,
-
-          creditAmount:
-            true,
-
-          creditedAt:
-            true,
-
-          isActive:
-            true,
-
-          createdAt:
-            true,
+          id: true,
+          title: true,
+          fileUrl: true,
+          thumbnailUrl: true,
+          source: true,
+          uploadedByUserId: true,
+          approvalStatus: true,
+          rejectionReason: true,
+          categoryId: true,
+          companyId: true,
+          creditAmount: true,
+          creditedAt: true,
+          isActive: true,
+          createdAt: true,
         },
       });
 
-    if (
-      !existingPoster
-    ) {
+    if (!existingPoster) {
       return NextResponse.json(
         {
-          success:
-            false,
-
-          message:
-            "Poster not found.",
+          success: false,
+          message: "Poster not found.",
         },
         {
-          status:
-            404,
+          status: 404,
         }
       );
     }
 
-    /* ---------------------------------------------------------------------- */
-    /* EDIT POSTER                                                            */
-    /* ---------------------------------------------------------------------- */
-
-    if (
-      action ===
-      "EDIT"
-    ) {
+    if (action === "EDIT") {
       const admin =
         await findAdmin(
           approvedByUserId
@@ -1028,177 +806,95 @@ export async function PATCH(
       if (!admin) {
         return NextResponse.json(
           {
-            success:
-              false,
-
+            success: false,
             message:
               "Admin authorization failed.",
           },
           {
-            status:
-              403,
+            status: 403,
           }
         );
       }
 
       const title =
-        getCleanString(
-          body.title
-        );
+        getCleanString(body.title);
 
       const fileUrl =
-        getCleanString(
-          body.fileUrl
-        );
+        getCleanString(body.fileUrl);
 
       const categoryId =
-        getCleanString(
-          body.categoryId
-        );
+        getCleanString(body.categoryId);
 
       const categoryName =
-        getCleanString(
-          body.categoryName
-        );
+        getCleanString(body.categoryName);
 
       const companyId =
-        getCleanString(
-          body.companyId
-        );
+        getCleanString(body.companyId);
 
       const companyName =
-        getCleanString(
-          body.companyName
-        );
+        getCleanString(body.companyName);
 
       if (!title) {
         return NextResponse.json(
           {
-            success:
-              false,
-
+            success: false,
             message:
               "Poster title is required.",
           },
           {
-            status:
-              400,
+            status: 400,
           }
         );
       }
 
-      /* -------------------------------------------------------------------- */
-      /* CATEGORY                                                             */
-      /* -------------------------------------------------------------------- */
-
-      let category =
-        null;
-
-      if (categoryId) {
-        category =
-          await prisma.category.findFirst({
-            where: {
-              id:
-                categoryId,
-
-              isActive:
-                true,
-            },
-
-            select: {
-              id:
-                true,
-
-              name:
-                true,
-            },
-          });
-      } else if (
-        categoryName
-      ) {
-        category =
-          await prisma.category.findFirst({
-            where: {
-              name: {
-                equals:
-                  categoryName,
-
-                mode:
-                  "insensitive",
-              },
-
-              isActive:
-                true,
-            },
-
-            select: {
-              id:
-                true,
-
-              name:
-                true,
-            },
-          });
-      }
+      const category =
+        await resolveCategory({
+          categoryId,
+          categoryName,
+        });
 
       if (!category) {
         return NextResponse.json(
           {
-            success:
-              false,
-
+            success: false,
             message:
-              "Poster category not found.",
+              "Poster category is required.",
           },
           {
-            status:
-              400,
+            status: 400,
           }
         );
       }
 
-      /* -------------------------------------------------------------------- */
-      /* COMPANY                                                              */
-      /* -------------------------------------------------------------------- */
-
       let finalCompanyId:
         | string
-        | null =
-        null;
+        | null = null;
 
       if (
         companyId &&
-        companyId !==
-          "GENERAL"
+        companyId !== "GENERAL"
       ) {
         const company =
           await prisma.company.findFirst({
             where: {
-              id:
-                companyId,
-
-              isActive:
-                true,
+              id: companyId,
+              isActive: true,
             },
 
             select: {
-              id:
-                true,
+              id: true,
             },
           });
 
         if (!company) {
           return NextResponse.json(
             {
-              success:
-                false,
-
+              success: false,
               message:
                 "Selected insurance company was not found.",
             },
             {
-              status:
-                400,
+              status: 400,
             }
           );
         }
@@ -1207,42 +903,33 @@ export async function PATCH(
           company.id;
       } else if (
         companyName &&
-        companyName.toUpperCase() !==
-          "GENERAL"
+        companyName.toUpperCase() !== "GENERAL"
       ) {
         const company =
           await prisma.company.findFirst({
             where: {
               name: {
-                equals:
-                  companyName,
-
-                mode:
-                  "insensitive",
+                equals: companyName,
+                mode: "insensitive",
               },
 
-              isActive:
-                true,
+              isActive: true,
             },
 
             select: {
-              id:
-                true,
+              id: true,
             },
           });
 
         if (!company) {
           return NextResponse.json(
             {
-              success:
-                false,
-
+              success: false,
               message:
                 "Selected insurance company was not found.",
             },
             {
-              status:
-                400,
+              status: 400,
             }
           );
         }
@@ -1259,71 +946,48 @@ export async function PATCH(
 
           data: {
             title,
-
-            categoryId:
-              category.id,
-
-            companyId:
-              finalCompanyId,
+            categoryId: category.id,
+            companyId: finalCompanyId,
 
             ...(fileUrl
               ? {
                   fileUrl,
-
-                  thumbnailUrl:
-                    null,
+                  thumbnailUrl: null,
                 }
               : {}),
           },
 
           include: {
-            company:
-              true,
-
-            category:
-              true,
+            company: true,
+            category: true,
 
             uploadedBy: {
               select: {
-                id:
-                  true,
-
-                name:
-                  true,
-
-                phone:
-                  true,
-
-                email:
-                  true,
-
-                logoUrl:
-                  true,
+                id: true,
+                name: true,
+                phone: true,
+                email: true,
+                logoUrl: true,
               },
             },
 
             approvedBy: {
               select: {
-                id:
-                  true,
-
-                name:
-                  true,
+                id: true,
+                name: true,
               },
             },
 
             _count: {
               select: {
-                downloads:
-                  true,
+                downloads: true,
               },
             },
           },
         });
 
       return NextResponse.json({
-        success:
-          true,
+        success: true,
 
         message:
           fileUrl
@@ -1334,27 +998,18 @@ export async function PATCH(
       });
     }
 
-    /* ---------------------------------------------------------------------- */
-    /* APPROVE / REJECT VALIDATION                                            */
-    /* ---------------------------------------------------------------------- */
-
     if (
-      action !==
-        "APPROVE" &&
-      action !==
-        "REJECT"
+      action !== "APPROVE" &&
+      action !== "REJECT"
     ) {
       return NextResponse.json(
         {
-          success:
-            false,
-
+          success: false,
           message:
             "Valid poster action is required.",
         },
         {
-          status:
-            400,
+          status: 400,
         }
       );
     }
@@ -1367,62 +1022,40 @@ export async function PATCH(
     if (!admin) {
       return NextResponse.json(
         {
-          success:
-            false,
-
+          success: false,
           message:
             "Admin authorization failed.",
         },
         {
-          status:
-            403,
+          status: 403,
         }
       );
     }
 
-    /* ---------------------------------------------------------------------- */
-    /* APPROVE + CONTRIBUTOR CREDIT                                           */
-    /* ---------------------------------------------------------------------- */
-
-    if (
-      action ===
-      "APPROVE"
-    ) {
+    if (action === "APPROVE") {
       const requestedCredit =
         getCreditAmount(
           body.creditAmount
         );
 
-      if (
-        requestedCredit ===
-        null
-      ) {
+      if (requestedCredit === null) {
         return NextResponse.json(
           {
-            success:
-              false,
-
+            success: false,
             message:
               "Enter a valid contributor credit amount.",
           },
           {
-            status:
-              400,
+            status: 400,
           }
         );
       }
 
       const isAgentPoster =
-        existingPoster.source ===
-          "AGENT" &&
+        existingPoster.source === "AGENT" &&
         Boolean(
           existingPoster.uploadedByUserId
         );
-
-      /*
-       * creditedAt protects the Agent from receiving the same
-       * poster credit twice.
-       */
 
       const alreadyCredited =
         Boolean(
@@ -1432,16 +1065,13 @@ export async function PATCH(
       const creditToApply =
         isAgentPoster &&
         !alreadyCredited &&
-        requestedCredit >
-          0
+        requestedCredit > 0
           ? requestedCredit
           : 0;
 
       const result =
         await prisma.$transaction(
-          async (
-            tx
-          ) => {
+          async (tx) => {
             const poster =
               await tx.media.update({
                 where: {
@@ -1449,90 +1079,57 @@ export async function PATCH(
                 },
 
                 data: {
-                  approvalStatus:
-                    "APPROVED",
+                  approvalStatus: "APPROVED",
+                  approvedByUserId: admin.id,
+                  approvedAt: new Date(),
+                  rejectionReason: null,
+                  isActive: true,
 
-                  approvedByUserId:
-                    admin.id,
+                  ...(isAgentPoster &&
+                  !alreadyCredited
+                    ? {
+                        creditAmount:
+                          requestedCredit,
 
-                  approvedAt:
-                    new Date(),
-
-                  rejectionReason:
-                    null,
-
-                  isActive:
-                    true,
-
-                  ...(
-                    isAgentPoster &&
-                    !alreadyCredited
-                      ? {
-                          creditAmount:
-                            requestedCredit,
-
-                          creditedAt:
-                            requestedCredit >
-                            0
-                              ? new Date()
-                              : null,
-                        }
-                      : {}
-                  ),
+                        creditedAt:
+                          requestedCredit > 0
+                            ? new Date()
+                            : null,
+                      }
+                    : {}),
                 },
 
                 include: {
-                  company:
-                    true,
-
-                  category:
-                    true,
+                  company: true,
+                  category: true,
 
                   uploadedBy: {
                     select: {
-                      id:
-                        true,
-
-                      name:
-                        true,
-
-                      phone:
-                        true,
-
-                      email:
-                        true,
-
-                      logoUrl:
-                        true,
+                      id: true,
+                      name: true,
+                      phone: true,
+                      email: true,
+                      logoUrl: true,
                     },
                   },
 
                   approvedBy: {
                     select: {
-                      id:
-                        true,
-
-                      name:
-                        true,
+                      id: true,
+                      name: true,
                     },
                   },
 
                   _count: {
                     select: {
-                      downloads:
-                        true,
+                      downloads: true,
                     },
                   },
                 },
               });
 
-            /* -------------------------------------------------------------- */
-            /* ADD CREDIT TO AGENT WALLET                                     */
-            /* -------------------------------------------------------------- */
-
             if (
-              creditToApply >
-                0 &&
+              creditToApply > 0 &&
               existingPoster.uploadedByUserId
             ) {
               const agentId =
@@ -1540,53 +1137,34 @@ export async function PATCH(
 
               await tx.agentCreditAccount.upsert({
                 where: {
-                  userId:
-                    agentId,
+                  userId: agentId,
                 },
 
                 create: {
-                  userId:
-                    agentId,
-
-                  availableBalance:
-                    creditToApply,
-
-                  totalEarned:
-                    creditToApply,
-
-                  totalWithdrawn:
-                    0,
-
-                  totalPending:
-                    0,
+                  userId: agentId,
+                  availableBalance: creditToApply,
+                  totalEarned: creditToApply,
+                  totalWithdrawn: 0,
+                  totalPending: 0,
                 },
 
                 update: {
                   availableBalance: {
-                    increment:
-                      creditToApply,
+                    increment: creditToApply,
                   },
 
                   totalEarned: {
-                    increment:
-                      creditToApply,
+                    increment: creditToApply,
                   },
                 },
               });
 
               await tx.creditTransaction.create({
                 data: {
-                  userId:
-                    agentId,
-
-                  mediaId:
-                    id,
-
-                  type:
-                    "EARN",
-
-                  amount:
-                    creditToApply,
+                  userId: agentId,
+                  mediaId: id,
+                  type: "EARN",
+                  amount: creditToApply,
 
                   description:
                     `Poster approval credit: ${existingPoster.title}`,
@@ -1594,8 +1172,7 @@ export async function PATCH(
                   referenceType:
                     "MEDIA_APPROVAL",
 
-                  referenceId:
-                    id,
+                  referenceId: id,
                 },
               });
             }
@@ -1607,88 +1184,55 @@ export async function PATCH(
       let responseMessage =
         "Poster approved and published successfully.";
 
-      if (
-        creditToApply >
-        0
-      ) {
+      if (creditToApply > 0) {
         responseMessage =
           `Poster approved successfully. ₹${creditToApply.toLocaleString(
             "en-IN",
             {
-              maximumFractionDigits:
-                2,
+              maximumFractionDigits: 2,
             }
           )} credited to the contributor.`;
-      } else if (
-        alreadyCredited
-      ) {
+      } else if (alreadyCredited) {
         responseMessage =
           "Poster approved successfully. Existing contributor credit was retained; no duplicate credit was added.";
       }
 
       return NextResponse.json({
-        success:
-          true,
-
-        message:
-          responseMessage,
-
-        creditAdded:
-          creditToApply,
-
+        success: true,
+        message: responseMessage,
+        creditAdded: creditToApply,
         alreadyCredited,
-
-        poster:
-          result,
+        poster: result,
       });
     }
-
-    /* ---------------------------------------------------------------------- */
-    /* REJECT                                                                 */
-    /* ---------------------------------------------------------------------- */
 
     const rejectionReason =
       getCleanString(
         body.rejectionReason
       );
 
-    if (
-      !rejectionReason
-    ) {
+    if (!rejectionReason) {
       return NextResponse.json(
         {
-          success:
-            false,
-
+          success: false,
           message:
             "Rejection reason is required.",
         },
         {
-          status:
-            400,
+          status: 400,
         }
       );
     }
 
-    /*
-     * Once money has already been credited we keep the accounting
-     * transaction intact. Admin can edit/disable the poster instead.
-     */
-
-    if (
-      existingPoster.creditedAt
-    ) {
+    if (existingPoster.creditedAt) {
       return NextResponse.json(
         {
-          success:
-            false,
-
+          success: false,
           message:
             "This poster has already been credited to the contributor and cannot be rejected. Edit or disable it instead.",
         },
         {
-          status:
-            409,
+          status: 409,
         }
       );
     }
@@ -1700,83 +1244,49 @@ export async function PATCH(
         },
 
         data: {
-          approvalStatus:
-            "REJECTED",
-
-          approvedByUserId:
-            admin.id,
-
-          approvedAt:
-            new Date(),
-
+          approvalStatus: "REJECTED",
+          approvedByUserId: admin.id,
+          approvedAt: new Date(),
           rejectionReason,
-
-          /*
-           * Keep rejected record so Agent can see
-           * rejection reason in upload history.
-           */
-
-          isActive:
-            true,
+          isActive: true,
         },
 
         include: {
-          company:
-            true,
-
-          category:
-            true,
+          company: true,
+          category: true,
 
           uploadedBy: {
             select: {
-              id:
-                true,
-
-              name:
-                true,
-
-              phone:
-                true,
-
-              email:
-                true,
-
-              logoUrl:
-                true,
+              id: true,
+              name: true,
+              phone: true,
+              email: true,
+              logoUrl: true,
             },
           },
 
           approvedBy: {
             select: {
-              id:
-                true,
-
-              name:
-                true,
+              id: true,
+              name: true,
             },
           },
 
           _count: {
             select: {
-              downloads:
-                true,
+              downloads: true,
             },
           },
         },
       });
 
     return NextResponse.json({
-      success:
-        true,
-
+      success: true,
       message:
         "Poster rejected successfully.",
-
       poster,
     });
-  } catch (
-    error
-  ) {
+  } catch (error) {
     console.error(
       "POSTER PATCH ERROR:",
       error
@@ -1784,15 +1294,12 @@ export async function PATCH(
 
     return NextResponse.json(
       {
-        success:
-          false,
-
+        success: false,
         message:
           "Unable to update poster.",
       },
       {
-        status:
-          500,
+        status: 500,
       }
     );
   }
@@ -1808,31 +1315,20 @@ export async function DELETE(
   try {
     const {
       searchParams,
-    } =
-      new URL(
-        request.url
-      );
+    } = new URL(request.url);
 
     const id =
-      searchParams
-        .get(
-          "id"
-        )
-        ?.trim() ||
-      "";
+      searchParams.get("id")?.trim() || "";
 
     if (!id) {
       return NextResponse.json(
         {
-          success:
-            false,
-
+          success: false,
           message:
             "Poster ID is required.",
         },
         {
-          status:
-            400,
+          status: 400,
         }
       );
     }
@@ -1844,58 +1340,38 @@ export async function DELETE(
         },
 
         select: {
-          id:
-            true,
-
-          source:
-            true,
-
-          approvalStatus:
-            true,
-
-          creditedAt:
-            true,
+          id: true,
+          source: true,
+          approvalStatus: true,
+          creditedAt: true,
         },
       });
 
-    if (
-      !existingPoster
-    ) {
+    if (!existingPoster) {
       return NextResponse.json(
         {
-          success:
-            false,
-
+          success: false,
           message:
             "Poster not found.",
         },
         {
-          status:
-            404,
+          status: 404,
         }
       );
     }
 
-    /*
-     * A credited Agent poster remains part of the financial history.
-     */
-
     if (
-      existingPoster.source ===
-        "AGENT" &&
+      existingPoster.source === "AGENT" &&
       existingPoster.creditedAt
     ) {
       return NextResponse.json(
         {
-          success:
-            false,
-
+          success: false,
           message:
             "Credited Agent posters cannot be deleted because they are part of the contributor transaction history. Disable/edit them instead.",
         },
         {
-          status:
-            409,
+          status: 409,
         }
       );
     }
@@ -1906,21 +1382,16 @@ export async function DELETE(
       },
 
       data: {
-        isActive:
-          false,
+        isActive: false,
       },
     });
 
     return NextResponse.json({
-      success:
-        true,
-
+      success: true,
       message:
         "Poster deleted successfully.",
     });
-  } catch (
-    error
-  ) {
+  } catch (error) {
     console.error(
       "DELETE POSTER ERROR:",
       error
@@ -1928,15 +1399,12 @@ export async function DELETE(
 
     return NextResponse.json(
       {
-        success:
-          false,
-
+        success: false,
         message:
           "Unable to delete poster.",
       },
       {
-        status:
-          500,
+        status: 500,
       }
     );
   }

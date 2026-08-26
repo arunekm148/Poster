@@ -3,15 +3,52 @@ import prisma from "@/lib/prisma";
 
 import bcrypt from "bcryptjs";
 import crypto from "crypto";
-import fs from "fs/promises";
-import path from "path";
+import { createClient } from "@supabase/supabase-js";
+
+/* -------------------------------------------------------------------------- */
+/* SUPABASE                                                                   */
+/* -------------------------------------------------------------------------- */
+
+const supabaseUrl =
+  process.env.SUPABASE_URL;
+
+const supabaseSecretKey =
+  process.env.SUPABASE_SECRET_KEY;
+
+if (!supabaseUrl) {
+  throw new Error(
+    "SUPABASE_URL is missing from environment variables."
+  );
+}
+
+if (!supabaseSecretKey) {
+  throw new Error(
+    "SUPABASE_SECRET_KEY is missing from environment variables."
+  );
+}
+
+const supabase =
+  createClient(
+    supabaseUrl,
+    supabaseSecretKey,
+    {
+      auth: {
+        persistSession: false,
+        autoRefreshToken: false,
+      },
+    }
+  );
 
 /* -------------------------------------------------------------------------- */
 /* REGISTER AGENT                                                             */
 /* -------------------------------------------------------------------------- */
 
-export async function POST(request: Request) {
-  let savedLogoPath: string | null = null;
+export async function POST(
+  request: Request
+) {
+  let uploadedLogoPath:
+    | string
+    | null = null;
 
   try {
     /* ---------------------------------------------------------------------- */
@@ -57,7 +94,9 @@ export async function POST(request: Request) {
 
     const confirmPassword =
       String(
-        formData.get("confirmPassword") || ""
+        formData.get(
+          "confirmPassword"
+        ) || ""
       );
 
     const logo =
@@ -344,26 +383,8 @@ export async function POST(request: Request) {
       const fileName =
         `${Date.now()}-${crypto.randomUUID()}.${extension}`;
 
-      const uploadDirectory =
-        path.join(
-          process.cwd(),
-          "public",
-          "uploads",
-          "agent-logos"
-        );
-
-      await fs.mkdir(
-        uploadDirectory,
-        {
-          recursive: true,
-        }
-      );
-
-      const filePath =
-        path.join(
-          uploadDirectory,
-          fileName
-        );
+      const storagePath =
+        `agents/${fileName}`;
 
       const bytes =
         await logo.arrayBuffer();
@@ -371,16 +392,63 @@ export async function POST(request: Request) {
       const buffer =
         Buffer.from(bytes);
 
-      await fs.writeFile(
-        filePath,
-        buffer
-      );
+      const {
+        error:
+          uploadError,
+      } =
+        await supabase.storage
+          .from(
+            "agent-logos"
+          )
+          .upload(
+            storagePath,
+            buffer,
+            {
+              contentType:
+                logo.type,
+              cacheControl:
+                "3600",
+              upsert:
+                false,
+            }
+          );
 
-      savedLogoPath =
-        filePath;
+      if (uploadError) {
+        console.error(
+          "SUPABASE LOGO UPLOAD ERROR:",
+          uploadError
+        );
+
+        return NextResponse.json(
+          {
+            success: false,
+            message:
+              "Unable to upload agent logo.",
+          },
+          {
+            status: 500,
+          }
+        );
+      }
+
+      uploadedLogoPath =
+        storagePath;
+
+      const {
+        data:
+          publicUrlData,
+      } =
+        supabase.storage
+          .from(
+            "agent-logos"
+          )
+          .getPublicUrl(
+            storagePath
+          );
 
       logoUrl =
-        `/uploads/agent-logos/${fileName}`;
+        publicUrlData
+          .publicUrl;
     }
 
     /* ---------------------------------------------------------------------- */
@@ -457,16 +525,27 @@ export async function POST(request: Request) {
     );
 
     /* ---------------------------------------------------------------------- */
-    /* REMOVE LOGO IF DATABASE CREATE FAILED                                  */
+    /* DELETE SUPABASE LOGO IF DATABASE CREATE FAILED                         */
     /* ---------------------------------------------------------------------- */
 
-    if (savedLogoPath) {
+    if (
+      uploadedLogoPath
+    ) {
       try {
-        await fs.unlink(
-          savedLogoPath
+        await supabase.storage
+          .from(
+            "agent-logos"
+          )
+          .remove([
+            uploadedLogoPath,
+          ]);
+      } catch (
+        cleanupError
+      ) {
+        console.error(
+          "LOGO CLEANUP ERROR:",
+          cleanupError
         );
-      } catch {
-        // Ignore cleanup error
       }
     }
 
