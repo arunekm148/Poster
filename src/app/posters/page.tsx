@@ -189,7 +189,7 @@ maximumFractionDigits:
 }
 
 /* -------------------------------------------------------------------------- */
-/* SINGLE HORIZONTAL PREVIEW MASK */
+/* DIAGONAL PREVIEW WATERMARKS                                                */
 /* -------------------------------------------------------------------------- */
 
 function PreviewMask({
@@ -197,20 +197,35 @@ text,
 }: {
 text: string;
 }) {
+const watermarkClass =
+"absolute -translate-x-1/2 -translate-y-1/2 -rotate-[68deg] whitespace-nowrap text-[11px] font-medium tracking-[0.08em] text-slate-500/30 sm:text-xs";
+
 return (
-<div className="pointer-events-none absolute inset-0 z-20 select-none">
+<div className="pointer-events-none absolute inset-0 z-20 select-none overflow-hidden">
 
-<div className="absolute left-0 top-1/2 w-full -translate-y-1/2">
-
-<div className="border-y border-white/10 bg-black/[0.06] px-3 py-2.5 text-center">
-
-<p className="whitespace-nowrap text-[11px] font-black tracking-[0.08em] text-white/50 sm:text-xs">
+<p className={`${watermarkClass} left-[12%] top-[18%]`}>
 {text}
 </p>
 
-</div>
+<p className={`${watermarkClass} left-[40%] top-[14%]`}>
+{text}
+</p>
 
-</div>
+<p className={`${watermarkClass} left-[72%] top-[22%]`}>
+{text}
+</p>
+
+<p className={`${watermarkClass} left-[30%] top-[58%]`}>
+{text}
+</p>
+
+<p className={`${watermarkClass} left-[62%] top-[54%]`}>
+{text}
+</p>
+
+<p className={`${watermarkClass} left-[90%] top-[66%]`}>
+{text}
+</p>
 
 </div>
 );
@@ -1930,44 +1945,62 @@ number,
 posterHeight:
 number
 ) {
-const centerY =
-posterHeight /
-2;
-
-const bandHeight =
-Math.max(
-48,
-Math.round(
-posterHeight *
-0.055
-)
-);
-
-context.save();
-
-context.fillStyle =
-"rgba(0, 0, 0, 0.07)";
-
-context.fillRect(
-0,
-centerY -
-bandHeight /
-2,
-width,
-bandHeight
-);
+/*
+ * Same diagonal watermark pattern used in the on-screen poster preview.
+ *
+ * The watermark has:
+ * - no shaded strip
+ * - no background box
+ * - no shadow
+ * - 70% transparency / 30% visible opacity
+ * - repeated agent name + mobile number
+ */
 
 const fontSize =
 Math.max(
 18,
 Math.round(
 width *
-0.028
+0.021
 )
 );
 
+const watermarkPositions = [
+{
+x: 0.12,
+y: 0.18,
+},
+{
+x: 0.40,
+y: 0.14,
+},
+{
+x: 0.72,
+y: 0.22,
+},
+{
+x: 0.30,
+y: 0.58,
+},
+{
+x: 0.62,
+y: 0.54,
+},
+{
+x: 0.90,
+y: 0.66,
+},
+];
+
+const angle =
+68 *
+Math.PI /
+180;
+
+context.save();
+
 context.font =
-`800 ${fontSize}px Arial`;
+`700 ${fontSize}px Arial`;
 
 context.textAlign =
 "center";
@@ -1976,7 +2009,7 @@ context.textBaseline =
 "middle";
 
 context.fillStyle =
-"rgba(255,255,255,0.52)";
+"rgba(255,255,255,0.45)";
 
 context.shadowColor =
 "transparent";
@@ -1984,33 +2017,34 @@ context.shadowColor =
 context.shadowBlur =
 0;
 
+context.globalAlpha =
+1;
+
+for (
+const position
+of watermarkPositions
+) {
+context.save();
+
+context.translate(
+width *
+position.x,
+posterHeight *
+position.y
+);
+
+context.rotate(
+angle
+);
+
 context.fillText(
 maskText,
-width /
-2,
-centerY
-);
-
-context.fillStyle =
-"rgba(255,255,255,0.10)";
-
-context.fillRect(
 0,
-centerY -
-bandHeight /
-2,
-width,
-1
+0
 );
 
-context.fillRect(
-0,
-centerY +
-bandHeight /
-2,
-width,
-1
-);
+context.restore();
+}
 
 context.restore();
 }
