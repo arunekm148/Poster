@@ -1935,7 +1935,7 @@ source;
 /* DRAW SINGLE CENTER MASK */
 /* ------------------------------------------------------------------------ */
 
-function drawCenterMask(
+function drawDiagonalWatermarks(
 context:
 CanvasRenderingContext2D,
 
@@ -2168,7 +2168,7 @@ width,
 posterHeight
 );
 
-drawCenterMask(
+drawDiagonalWatermarks(
 context,
 width,
 posterHeight
