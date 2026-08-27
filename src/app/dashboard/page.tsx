@@ -3029,7 +3029,7 @@ Create personalised insurance posters for WhatsApp, social media and customer pr
 </div>
 
 <Link
-href="/posters"
+href="/posters?v=20260828"
 className="shrink-0 rounded-xl bg-white px-5 py-3 text-center text-sm font-black text-blue-900 shadow-sm transition hover:bg-blue-50"
 >
 Browse Posters →
