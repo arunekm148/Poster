@@ -12,6 +12,21 @@ function cleanPhone(value: unknown) {
     .trim();
 }
 
+function shouldShowDebugError(request: Request) {
+  try {
+    const host = new URL(request.url).hostname.toLowerCase();
+
+    return (
+      host === "arun.agentsindia.org" ||
+      host === "test.agentsindia.org" ||
+      host === "localhost" ||
+      host === "127.0.0.1"
+    );
+  } catch {
+    return false;
+  }
+}
+
 /* -------------------------------------------------------------------------- */
 /* LOGIN                                                                      */
 /* -------------------------------------------------------------------------- */
@@ -117,11 +132,10 @@ export async function POST(request: Request) {
       /* MAIN USER PASSWORD                                                   */
       /* -------------------------------------------------------------------- */
 
-      const passwordCorrect =
-        await bcrypt.compare(
-          password,
-          user.password
-        );
+      const passwordCorrect = await bcrypt.compare(
+        password,
+        user.password
+      );
 
       if (!passwordCorrect) {
         return NextResponse.json(
@@ -149,13 +163,7 @@ export async function POST(request: Request) {
 
           user: {
             id: user.id,
-
-            /*
-             * For the main Agent/Admin,
-             * userId and id are the same.
-             */
             userId: user.id,
-
             staffId: null,
 
             name: user.name,
@@ -163,7 +171,6 @@ export async function POST(request: Request) {
             email: user.email,
 
             role: user.role,
-
             accountType: "USER",
 
             logoUrl: user.logoUrl,
@@ -183,56 +190,55 @@ export async function POST(request: Request) {
     /* STAFF / SUPERVISOR                                                     */
     /* ---------------------------------------------------------------------- */
 
-    const staff =
-      await prisma.staff.findUnique({
-        where: {
-          phone,
-        },
+    const staff = await prisma.staff.findUnique({
+      where: {
+        phone,
+      },
 
-        select: {
-          id: true,
-          userId: true,
+      select: {
+        id: true,
+        userId: true,
 
-          staffCode: true,
-          name: true,
+        staffCode: true,
+        name: true,
 
-          phone: true,
-          whatsapp: true,
-          email: true,
+        phone: true,
+        whatsapp: true,
+        email: true,
 
-          password: true,
+        password: true,
 
-          loginEnabled: true,
-          isActive: true,
+        loginEnabled: true,
+        isActive: true,
 
-          staffRole: true,
+        staffRole: true,
 
-          designation: true,
-          department: true,
+        designation: true,
+        department: true,
 
-          supervisorId: true,
+        supervisorId: true,
 
-          state: true,
-          district: true,
+        state: true,
+        district: true,
 
-          user: {
-            select: {
-              id: true,
-              name: true,
-              logoUrl: true,
-              isActive: true,
-            },
-          },
-
-          supervisor: {
-            select: {
-              id: true,
-              staffCode: true,
-              name: true,
-            },
+        user: {
+          select: {
+            id: true,
+            name: true,
+            logoUrl: true,
+            isActive: true,
           },
         },
-      });
+
+        supervisor: {
+          select: {
+            id: true,
+            staffCode: true,
+            name: true,
+          },
+        },
+      },
+    });
 
     /* ---------------------------------------------------------------------- */
     /* ACCOUNT NOT FOUND                                                      */
@@ -341,16 +347,6 @@ export async function POST(request: Request) {
         accountType: "STAFF",
 
         user: {
-          /*
-           * IMPORTANT:
-           *
-           * id       = staff identity
-           * staffId  = staff identity
-           * userId   = owning Agent / Business ID
-           *
-           * All existing Customers, Policies,
-           * Sub Agents, Renewals etc. use userId.
-           */
           id: staff.id,
           staffId: staff.id,
           userId: staff.userId,
@@ -364,27 +360,19 @@ export async function POST(request: Request) {
           email: staff.email,
 
           role: staff.staffRole,
-
           accountType: "STAFF",
 
-          designation:
-            staff.designation,
+          designation: staff.designation,
+          department: staff.department,
 
-          department:
-            staff.department,
-
-          supervisorId:
-            staff.supervisorId,
+          supervisorId: staff.supervisorId,
 
           supervisor:
             staff.supervisor
               ? {
-                  id:
-                    staff.supervisor.id,
-
+                  id: staff.supervisor.id,
                   staffCode:
                     staff.supervisor.staffCode,
-
                   name:
                     staff.supervisor.name,
                 }
@@ -393,18 +381,13 @@ export async function POST(request: Request) {
           state: staff.state,
           district: staff.district,
 
-          /*
-           * Owning Agent / Business
-           */
           agent: {
             id: staff.user.id,
             name: staff.user.name,
-            logoUrl:
-              staff.user.logoUrl,
+            logoUrl: staff.user.logoUrl,
           },
 
-          logoUrl:
-            staff.user.logoUrl,
+          logoUrl: staff.user.logoUrl,
         },
       },
       {
@@ -412,27 +395,27 @@ export async function POST(request: Request) {
       }
     );
   } catch (error) {
-    console.error(
-      "LOGIN ERROR:",
-      error
-    );
+    console.error("LOGIN ERROR:", error);
 
     const message =
       error instanceof Error
         ? error.message
-        : "Unknown error";
+        : String(error);
+
+    const showDebugError =
+      shouldShowDebugError(request);
 
     return NextResponse.json(
       {
         success: false,
-        message:
-          "Login failed. Please try again.",
 
-        error:
-          process.env.NODE_ENV ===
-          "development"
-            ? message
-            : undefined,
+        message: showDebugError
+          ? `Login failed: ${message}`
+          : "Login failed. Please try again.",
+
+        error: showDebugError
+          ? message
+          : undefined,
       },
       {
         status: 500,
