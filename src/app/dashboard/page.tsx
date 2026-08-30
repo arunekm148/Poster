@@ -20,11 +20,17 @@ type AccountMode =
 
 type AgentUser = {
 id?: string;
+userId?: string;
+staffId?: string | null;
 name?: string;
 phone?: string;
 email?: string | null;
 role?: string;
+accountType?: "USER" | "STAFF";
 accountMode?: AccountMode;
+staffCode?: string;
+designation?: string | null;
+department?: string | null;
 logoUrl?: string | null;
 state?: string | null;
 district?: string | null;
@@ -618,6 +624,36 @@ renewalCollected.length,
 renewalPendingCount:
 renewalPending.length,
 };
+}
+
+function isStaffAccount(
+user?: AgentUser | null
+) {
+const accountType =
+String(
+user?.accountType ||
+""
+)
+.trim()
+.toUpperCase();
+
+const role =
+String(
+user?.role ||
+""
+)
+.trim()
+.toUpperCase()
+.replace(/[\s-]+/g, "_");
+
+return (
+accountType ===
+"STAFF" ||
+role ===
+"STAFF" ||
+role ===
+"SUPERVISOR"
+);
 }
 
 function isMasterAdminRole(
@@ -1879,12 +1915,28 @@ savedMode
 );
 }
 
+const dashboardUserId =
+isStaffAccount(
+parsedUser
+)
+? parsedUser.userId
+: parsedUser.id;
+
+if (!dashboardUserId) {
+throw new Error(
+"Dashboard user ID is missing"
+);
+}
+
 localStorage.setItem(
 "userId",
-parsedUser.id
+dashboardUserId
 );
 
 if (
+!isStaffAccount(
+parsedUser
+) &&
 String(
 parsedUser.role ||
 ""
@@ -1892,12 +1944,12 @@ parsedUser.role ||
 "AGENT"
 ) {
 void loadAccountMode(
-parsedUser.id
+dashboardUserId
 );
 }
 
 void loadDashboardData(
-parsedUser.id
+dashboardUserId
 );
 
 void loadExamModuleSetting();
@@ -2091,12 +2143,26 @@ user?.role,
 ]
 );
 
+const staffSession =
+useMemo(
+() =>
+isStaffAccount(
+user
+),
+[
+user,
+]
+);
+
 const canUseStaff =
+!staffSession &&
+(
 showMasterAdmin ||
 accountMode ===
 "SELF_STAFF" ||
 accountMode ===
-"SELF_STAFF_SUBAGENT";
+"SELF_STAFF_SUBAGENT"
+);
 
 const canUseSubAgents =
 showMasterAdmin ||
@@ -2696,7 +2762,15 @@ Welcome back
 </h1>
 
 <p className="mt-0.5 text-xs text-blue-200">
-Agent Dashboard
+{staffSession
+? String(
+user.role ||
+"STAFF"
+).toUpperCase() ===
+"SUPERVISOR"
+? "Supervisor Dashboard"
+: "Staff Dashboard"
+: "Agent Dashboard"}
 </p>
 
 <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs font-bold text-white">
@@ -2741,7 +2815,8 @@ hour12: true,
 
 <div className="flex flex-col items-end gap-2">
 
-{!showMasterAdmin && (
+{!showMasterAdmin &&
+!staffSession && (
 <>
 <div className="flex items-center rounded-xl border border-white/15 bg-white/10 p-1 shadow-inner">
 
