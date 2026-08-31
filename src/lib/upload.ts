@@ -27,13 +27,8 @@ export type UploadFolder =
 /* SETTINGS                                                                   */
 /* -------------------------------------------------------------------------- */
 
-const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10 MB
-
-/*
- * Files up to 2 MB are stored exactly as uploaded.
- * Only larger files are optimized.
- */
-const COMPRESSION_THRESHOLD = 2 * 1024 * 1024; // 2 MB
+const MAX_FILE_SIZE = 10 * 1024 * 1024;
+const COMPRESSION_THRESHOLD = 2 * 1024 * 1024;
 
 const ALLOWED_IMAGE_TYPES = [
   "image/jpeg",
@@ -57,14 +52,11 @@ const POLICY_MAX_WIDTH = 2600;
 const POLICY_MAX_HEIGHT = 3400;
 
 /* -------------------------------------------------------------------------- */
-/* R2 CONFIG                                                                  */
+/* ENV HELPERS                                                                */
 /* -------------------------------------------------------------------------- */
 
-function getRequiredEnv(
-  key: string
-): string {
-  const value =
-    process.env[key]?.trim();
+function getRequiredEnv(key: string): string {
+  const value = process.env[key]?.trim();
 
   if (!value) {
     throw new Error(
@@ -76,24 +68,53 @@ function getRequiredEnv(
 }
 
 /* -------------------------------------------------------------------------- */
-/* GET R2 CLIENT                                                              */
+/* BASE FOLDER                                                                */
+/* -------------------------------------------------------------------------- */
+
+function getR2BaseFolder(): string {
+  const baseFolder =
+    process.env.R2_BASE_FOLDER?.trim();
+
+  if (!baseFolder) {
+    return "";
+  }
+
+  return baseFolder
+    .replace(/^\/+/, "")
+    .replace(/\/+$/, "");
+}
+
+/* -------------------------------------------------------------------------- */
+/* BUILD OBJECT KEY                                                           */
+/* -------------------------------------------------------------------------- */
+
+function buildObjectKey(
+  folder: UploadFolder,
+  fileName: string
+): string {
+  const baseFolder =
+    getR2BaseFolder();
+
+  if (baseFolder) {
+    return `${baseFolder}/${folder}/${fileName}`;
+  }
+
+  return `${folder}/${fileName}`;
+}
+
+/* -------------------------------------------------------------------------- */
+/* R2 CLIENT                                                                  */
 /* -------------------------------------------------------------------------- */
 
 function getR2Client(): S3Client {
   const accessKeyId =
-    getRequiredEnv(
-      "R2_ACCESS_KEY_ID"
-    );
+    getRequiredEnv("R2_ACCESS_KEY_ID");
 
   const secretAccessKey =
-    getRequiredEnv(
-      "R2_SECRET_ACCESS_KEY"
-    );
+    getRequiredEnv("R2_SECRET_ACCESS_KEY");
 
   const endpoint =
-    getRequiredEnv(
-      "R2_ENDPOINT"
-    );
+    getRequiredEnv("R2_ENDPOINT");
 
   return new S3Client({
     region: "auto",
@@ -106,7 +127,7 @@ function getR2Client(): S3Client {
 }
 
 /* -------------------------------------------------------------------------- */
-/* GET BUCKET                                                                 */
+/* R2 BUCKET                                                                  */
 /* -------------------------------------------------------------------------- */
 
 function getR2Bucket(): string {
@@ -116,7 +137,7 @@ function getR2Bucket(): string {
 }
 
 /* -------------------------------------------------------------------------- */
-/* GET PUBLIC URL                                                             */
+/* PUBLIC URL                                                                 */
 /* -------------------------------------------------------------------------- */
 
 function getR2PublicUrl(): string {
@@ -129,12 +150,6 @@ function getR2PublicUrl(): string {
 /* LEGACY HOSTINGER UPLOAD ROOT                                               */
 /* -------------------------------------------------------------------------- */
 
-/*
- * This is kept only so old /uploads/... files can still
- * be deleted if they physically exist on the Hostinger server.
- *
- * NEW uploads do NOT use this folder.
- */
 export function getUploadRoot(): string {
   const customUploadRoot =
     process.env.UPLOAD_ROOT?.trim();
@@ -160,9 +175,9 @@ function sanitizeFileName(
   fileName: string
 ): string {
   const extension =
-    path
-      .extname(fileName)
-      .toLowerCase();
+    path.extname(
+      fileName
+    ).toLowerCase();
 
   const baseName =
     path
@@ -184,9 +199,7 @@ function sanitizeFileName(
         ""
       );
 
-  return `${
-    baseName || "file"
-  }${extension}`;
+  return `${baseName || "file"}${extension}`;
 }
 
 /* -------------------------------------------------------------------------- */
@@ -335,8 +348,7 @@ async function uploadBufferToR2(
       Bucket: bucket,
       Key: objectKey,
       Body: buffer,
-      ContentType:
-        contentType,
+      ContentType: contentType,
       CacheControl:
         "public, max-age=31536000, immutable",
     })
@@ -344,7 +356,7 @@ async function uploadBufferToR2(
 }
 
 /* -------------------------------------------------------------------------- */
-/* SAVE ORIGINAL IMAGE TO R2                                                  */
+/* SAVE ORIGINAL IMAGE                                                        */
 /* -------------------------------------------------------------------------- */
 
 async function saveOriginalImage(
@@ -359,7 +371,10 @@ async function saveOriginalImage(
     );
 
   const relativePath =
-    `${folder}/${fileName}`;
+    buildObjectKey(
+      folder,
+      fileName
+    );
 
   await uploadBufferToR2(
     buffer,
@@ -376,18 +391,13 @@ async function saveOriginalImage(
     fileName,
     relativePath,
     publicUrl,
-
-    /*
-     * Kept for compatibility with existing callers.
-     * R2 has no local filesystem absolute path.
-     */
     absolutePath:
       relativePath,
   };
 }
 
 /* -------------------------------------------------------------------------- */
-/* SAVE WEBP TO R2                                                            */
+/* SAVE WEBP                                                                  */
 /* -------------------------------------------------------------------------- */
 
 async function saveWebpImage(
@@ -401,7 +411,10 @@ async function saveWebpImage(
     );
 
   const relativePath =
-    `${folder}/${fileName}`;
+    buildObjectKey(
+      folder,
+      fileName
+    );
 
   await uploadBufferToR2(
     buffer,
@@ -479,10 +492,6 @@ export async function saveUploadedImage(
       arrayBuffer
     );
 
-  /* ------------------------------------------------------------------------ */
-  /* DO NOT COMPRESS SMALL FILES                                              */
-  /* ------------------------------------------------------------------------ */
-
   if (
     file.size <=
     COMPRESSION_THRESHOLD
@@ -496,10 +505,6 @@ export async function saveUploadedImage(
     );
   }
 
-  /* ------------------------------------------------------------------------ */
-  /* DO NOT TOUCH GIF                                                         */
-  /* ------------------------------------------------------------------------ */
-
   if (
     file.type ===
     "image/gif"
@@ -511,10 +516,6 @@ export async function saveUploadedImage(
       file.type
     );
   }
-
-  /* ------------------------------------------------------------------------ */
-  /* ONLY COMPRESS SELECTED LARGE FILES                                       */
-  /* ------------------------------------------------------------------------ */
 
   try {
     let optimizationSettings:
@@ -560,9 +561,6 @@ export async function saveUploadedImage(
       };
     }
 
-    /*
-     * Other image types remain untouched.
-     */
     if (
       !optimizationSettings
     ) {
@@ -581,11 +579,6 @@ export async function saveUploadedImage(
         optimizationSettings
       );
 
-    /*
-     * If optimization somehow creates a file
-     * that is not smaller than the original,
-     * keep the original instead.
-     */
     if (
       optimizedBuffer.length >=
       originalBuffer.length
@@ -610,11 +603,6 @@ export async function saveUploadedImage(
       error
     );
 
-    /*
-     * Fallback:
-     * Never reject a valid upload simply because
-     * compression failed.
-     */
     return saveOriginalImage(
       originalBuffer,
       file.name,
@@ -705,7 +693,10 @@ export async function saveUploadedPolicyPdf(
     `policy-${timestamp}-${random}.pdf`;
 
   const relativePath =
-    `policies/${fileName}`;
+    buildObjectKey(
+      "policies",
+      fileName
+    );
 
   await uploadBufferToR2(
     buffer,
@@ -907,9 +898,6 @@ export async function deleteUploadedImage(
     return false;
   }
 
-  /*
-   * New Cloudflare R2 file.
-   */
   const r2ObjectKey =
     getR2ObjectKey(
       imageUrl
@@ -923,9 +911,6 @@ export async function deleteUploadedImage(
     );
   }
 
-  /*
-   * Legacy Hostinger /uploads/... file.
-   */
   if (
     imageUrl.startsWith(
       "/uploads/"
@@ -950,9 +935,6 @@ export function isUploadedFileUrl(
     return false;
   }
 
-  /*
-   * Legacy Hostinger upload.
-   */
   if (
     imageUrl.startsWith(
       "/uploads/"
@@ -961,9 +943,6 @@ export function isUploadedFileUrl(
     return true;
   }
 
-  /*
-   * Cloudflare R2 upload.
-   */
   return Boolean(
     getR2ObjectKey(
       imageUrl
