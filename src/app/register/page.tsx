@@ -204,6 +204,8 @@ export default function RegisterPage() {
   const [submitting, setSubmitting] = useState(false);
   const [message, setMessage] = useState("");
   const [success, setSuccess] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const cropImageRef = useRef<HTMLImageElement | null>(null);
@@ -634,30 +636,52 @@ export default function RegisterPage() {
 
             <div>
               <label htmlFor="password" className="block text-sm font-black text-slate-950">Password *</label>
-              <input
-                id="password"
-                type="password"
-                name="password"
-                placeholder="Create password"
-                minLength={6}
-                autoComplete="new-password"
-                required
-                className="mt-2 w-full rounded-xl border border-slate-400 bg-white px-4 py-3.5 text-base font-semibold text-slate-950 caret-blue-700 placeholder:text-slate-500 outline-none focus:border-blue-700 focus:ring-4 focus:ring-blue-100"
-              />
+              <div className="relative mt-2">
+                <input
+                  id="password"
+                  type={showPassword ? "text" : "password"}
+                  name="password"
+                  placeholder="Create password"
+                  minLength={6}
+                  autoComplete="new-password"
+                  required
+                  className="w-full rounded-xl border border-slate-400 bg-white px-4 py-3.5 pr-14 text-base font-semibold text-slate-950 caret-blue-700 placeholder:text-slate-500 outline-none focus:border-blue-700 focus:ring-4 focus:ring-blue-100"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword((current) => !current)}
+                  aria-label={showPassword ? "Hide password" : "Show password"}
+                  title={showPassword ? "Hide password" : "Show password"}
+                  className="absolute right-3 top-1/2 flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-lg text-xl hover:bg-slate-100"
+                >
+                  {showPassword ? "🙈" : "👁️"}
+                </button>
+              </div>
             </div>
 
             <div>
               <label htmlFor="confirmPassword" className="block text-sm font-black text-slate-950">Confirm Password *</label>
-              <input
-                id="confirmPassword"
-                type="password"
-                name="confirmPassword"
-                placeholder="Confirm password"
-                minLength={6}
-                autoComplete="new-password"
-                required
-                className="mt-2 w-full rounded-xl border border-slate-400 bg-white px-4 py-3.5 text-base font-semibold text-slate-950 caret-blue-700 placeholder:text-slate-500 outline-none focus:border-blue-700 focus:ring-4 focus:ring-blue-100"
-              />
+              <div className="relative mt-2">
+                <input
+                  id="confirmPassword"
+                  type={showConfirmPassword ? "text" : "password"}
+                  name="confirmPassword"
+                  placeholder="Confirm password"
+                  minLength={6}
+                  autoComplete="new-password"
+                  required
+                  className="w-full rounded-xl border border-slate-400 bg-white px-4 py-3.5 pr-14 text-base font-semibold text-slate-950 caret-blue-700 placeholder:text-slate-500 outline-none focus:border-blue-700 focus:ring-4 focus:ring-blue-100"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowConfirmPassword((current) => !current)}
+                  aria-label={showConfirmPassword ? "Hide confirm password" : "Show confirm password"}
+                  title={showConfirmPassword ? "Hide password" : "Show password"}
+                  className="absolute right-3 top-1/2 flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-lg text-xl hover:bg-slate-100"
+                >
+                  {showConfirmPassword ? "🙈" : "👁️"}
+                </button>
+              </div>
             </div>
 
             <div className="md:col-span-2">

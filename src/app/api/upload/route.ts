@@ -1,70 +1,12 @@
 import { NextResponse } from "next/server";
-import fs from "fs/promises";
-import path from "path";
-import crypto from "crypto";
 
 import {
-  getUploadRoot,
   saveUploadedImage,
+  saveUploadedPolicyPdf,
   type UploadFolder,
 } from "@/lib/upload";
 
 export const runtime = "nodejs";
-
-const MAX_FILE_SIZE = 10 * 1024 * 1024;
-
-/* -------------------------------------------------------------------------- */
-/* SAVE PDF                                                                   */
-/* -------------------------------------------------------------------------- */
-
-async function savePolicyPdf(file: File) {
-  if (file.size <= 0) {
-    throw new Error("Selected file is empty.");
-  }
-
-  if (file.size > MAX_FILE_SIZE) {
-    throw new Error("File size must be below 10 MB.");
-  }
-
-  if (file.type !== "application/pdf") {
-    throw new Error("Only PDF files are allowed for policy documents.");
-  }
-
-  const bytes = await file.arrayBuffer();
-  const buffer = Buffer.from(bytes);
-
-  if (
-    buffer.length < 5 ||
-    buffer.subarray(0, 5).toString("ascii") !== "%PDF-"
-  ) {
-    throw new Error("The selected file is not a valid PDF document.");
-  }
-
-  const uploadDirectory = path.join(
-    getUploadRoot(),
-    "policies"
-  );
-
-  await fs.mkdir(uploadDirectory, {
-    recursive: true,
-  });
-
-  const fileName = `${Date.now()}-${crypto.randomUUID()}.pdf`;
-
-  const filePath = path.join(
-    uploadDirectory,
-    fileName
-  );
-
-  await fs.writeFile(filePath, buffer);
-
-  const fileUrl = `/uploads/policies/${fileName}`;
-
-  return {
-    fileName,
-    fileUrl,
-  };
-}
 
 /* -------------------------------------------------------------------------- */
 /* GET IMAGE FOLDER                                                           */
@@ -107,6 +49,19 @@ function getImageFolder(type: string): UploadFolder | null {
 }
 
 /* -------------------------------------------------------------------------- */
+/* CHECK POLICY IMAGE TYPE                                                    */
+/* -------------------------------------------------------------------------- */
+
+function isPolicyImage(file: File): boolean {
+  return [
+    "image/jpeg",
+    "image/jpg",
+    "image/png",
+    "image/webp",
+  ].includes(file.type);
+}
+
+/* -------------------------------------------------------------------------- */
 /* POST                                                                       */
 /* -------------------------------------------------------------------------- */
 
@@ -135,7 +90,7 @@ export async function POST(request: Request) {
     }
 
     /* ---------------------------------------------------------------------- */
-    /* POLICY PDF                                                             */
+    /* POLICY                                                                 */
     /* ---------------------------------------------------------------------- */
 
     if (
@@ -143,25 +98,72 @@ export async function POST(request: Request) {
       uploadType === "policies"
     ) {
       try {
-        const uploaded = await savePolicyPdf(file);
+        /* ------------------------------------------------------------------ */
+        /* POLICY PDF                                                         */
+        /* ------------------------------------------------------------------ */
+
+        if (file.type === "application/pdf") {
+          const uploaded =
+            await saveUploadedPolicyPdf(file);
+
+          return NextResponse.json(
+            {
+              success: true,
+              message:
+                "Policy PDF uploaded successfully.",
+              fileName: uploaded.fileName,
+              fileUrl: uploaded.publicUrl,
+              url: uploaded.publicUrl,
+              fileType: "pdf",
+            },
+            {
+              status: 201,
+            }
+          );
+        }
+
+        /* ------------------------------------------------------------------ */
+        /* POLICY IMAGE                                                       */
+        /* ------------------------------------------------------------------ */
+
+        if (isPolicyImage(file)) {
+          const uploaded =
+            await saveUploadedImage(
+              file,
+              "policies"
+            );
+
+          return NextResponse.json(
+            {
+              success: true,
+              message:
+                "Policy image uploaded and compressed successfully.",
+              fileName: uploaded.fileName,
+              fileUrl: uploaded.publicUrl,
+              url: uploaded.publicUrl,
+              fileType: "image",
+            },
+            {
+              status: 201,
+            }
+          );
+        }
 
         return NextResponse.json(
           {
-            success: true,
-            message: "Policy PDF uploaded successfully.",
-            fileName: uploaded.fileName,
-            fileUrl: uploaded.fileUrl,
-            url: uploaded.fileUrl,
+            success: false,
+            message:
+              "Policy document must be PDF, JPG, JPEG, PNG or WEBP.",
           },
           {
-            status: 201,
+            status: 400,
           }
         );
       } catch (error) {
         const message =
           error instanceof Error
             ? error.message
-            : "Unable to upload policy PDF.";
+            : "Unable to upload policy document.";
 
         return NextResponse.json(
           {
@@ -176,10 +178,11 @@ export async function POST(request: Request) {
     }
 
     /* ---------------------------------------------------------------------- */
-    /* IMAGE                                                                  */
+    /* NORMAL IMAGE UPLOAD                                                    */
     /* ---------------------------------------------------------------------- */
 
-    const folder = getImageFolder(uploadType);
+    const folder =
+      getImageFolder(uploadType);
 
     if (!folder) {
       return NextResponse.json(
@@ -195,15 +198,21 @@ export async function POST(request: Request) {
     }
 
     try {
-      const uploaded = await saveUploadedImage(
-        file,
-        folder
-      );
+      const uploaded =
+        await saveUploadedImage(
+          file,
+          folder
+        );
 
       return NextResponse.json(
         {
           success: true,
-          message: "File uploaded successfully.",
+          message:
+            folder === "posters"
+              ? "Poster uploaded and compressed successfully."
+              : folder === "customers"
+                ? "Customer image uploaded and compressed successfully."
+                : "File uploaded successfully.",
           fileName: uploaded.fileName,
           fileUrl: uploaded.publicUrl,
           url: uploaded.publicUrl,
@@ -229,12 +238,16 @@ export async function POST(request: Request) {
       );
     }
   } catch (error) {
-    console.error("FILE UPLOAD ERROR:", error);
+    console.error(
+      "FILE UPLOAD ERROR:",
+      error
+    );
 
     return NextResponse.json(
       {
         success: false,
-        message: "Unable to upload file.",
+        message:
+          "Unable to upload file.",
       },
       {
         status: 500,
