@@ -50,6 +50,12 @@ export default function LoginPage() {
   const [password, setPassword] =
     useState("");
 
+  const [
+    showPassword,
+    setShowPassword,
+  ] =
+    useState(false);
+
   const [message, setMessage] =
     useState("");
 
@@ -107,10 +113,6 @@ export default function LoginPage() {
     try {
       setLoading(true);
 
-      /* ------------------------------------------------------------------ */
-      /* LOGIN REQUEST                                                      */
-      /* ------------------------------------------------------------------ */
-
       const response =
         await fetch(
           "/api/login",
@@ -158,10 +160,6 @@ export default function LoginPage() {
         data
       );
 
-      /* ------------------------------------------------------------------ */
-      /* LOGIN FAILED                                                       */
-      /* ------------------------------------------------------------------ */
-
       if (
         !response.ok ||
         !data.success
@@ -173,10 +171,6 @@ export default function LoginPage() {
 
         return;
       }
-
-      /* ------------------------------------------------------------------ */
-      /* CHECK USER DATA                                                    */
-      /* ------------------------------------------------------------------ */
 
       const loginUser =
         data.user;
@@ -204,25 +198,6 @@ export default function LoginPage() {
             ""
         ).toUpperCase();
 
-      /* ------------------------------------------------------------------ */
-      /* IMPORTANT                                                          */
-      /* ------------------------------------------------------------------ */
-      /*
-       *
-       * AGENT / ADMIN
-       *
-       * id     = User ID
-       * userId = User ID
-       *
-       *
-       * STAFF / SUPERVISOR
-       *
-       * id      = Staff ID
-       * staffId = Staff ID
-       * userId  = Owning Agent User ID
-       *
-       */
-
       const ownerUserId =
         String(
           loginUser.userId ||
@@ -242,15 +217,7 @@ export default function LoginPage() {
         return;
       }
 
-      /* ------------------------------------------------------------------ */
-      /* CLEAR PREVIOUS LOGIN                                               */
-      /* ------------------------------------------------------------------ */
-
       localStorage.clear();
-
-      /* ------------------------------------------------------------------ */
-      /* SAVE COMMON LOGIN INFORMATION                                      */
-      /* ------------------------------------------------------------------ */
 
       localStorage.setItem(
         "agentUser",
@@ -259,25 +226,12 @@ export default function LoginPage() {
         )
       );
 
-      /*
-       * Keep "user" also because some existing pages
-       * may read this localStorage key.
-       */
-
       localStorage.setItem(
         "user",
         JSON.stringify(
           loginUser
         )
       );
-
-      /*
-       * CRITICAL:
-       *
-       * For Staff this is the owning Agent ID.
-       * Existing Customers / Policies / Renewals
-       * use this userId.
-       */
 
       localStorage.setItem(
         "userId",
@@ -428,10 +382,6 @@ export default function LoginPage() {
         }
       }
 
-      /* ------------------------------------------------------------------ */
-      /* VERIFY LOGIN SAVED                                                  */
-      /* ------------------------------------------------------------------ */
-
       const savedUser =
         localStorage.getItem(
           "agentUser"
@@ -454,10 +404,6 @@ export default function LoginPage() {
 
         return;
       }
-
-      /* ------------------------------------------------------------------ */
-      /* SUCCESS                                                            */
-      /* ------------------------------------------------------------------ */
 
       setSuccess(true);
 
@@ -499,10 +445,6 @@ export default function LoginPage() {
 
         return;
       }
-
-      /* ------------------------------------------------------------------ */
-      /* AGENT                                                              */
-      /* ------------------------------------------------------------------ */
 
       setMessage(
         "Login successful. Opening dashboard..."
@@ -549,8 +491,6 @@ export default function LoginPage() {
   return (
     <main className="relative flex min-h-screen items-center justify-center overflow-hidden bg-gradient-to-br from-slate-950 via-blue-950 to-slate-900 px-4 py-8">
 
-      {/* BACKGROUND */}
-
       <div className="pointer-events-none absolute inset-0 overflow-hidden">
 
         <div className="absolute -left-32 -top-32 h-96 w-96 rounded-full bg-blue-500/20 blur-3xl" />
@@ -571,11 +511,7 @@ export default function LoginPage() {
 
       </div>
 
-      {/* LOGIN CONTAINER */}
-
       <div className="relative z-10 w-full max-w-md">
-
-        {/* HEADER */}
 
         <div className="mb-7 text-center text-white">
 
@@ -593,8 +529,6 @@ export default function LoginPage() {
           </p>
 
         </div>
-
-        {/* CARD */}
 
         <div className="rounded-3xl bg-white p-7 shadow-2xl sm:p-8">
 
@@ -672,25 +606,74 @@ export default function LoginPage() {
               Password
             </label>
 
-            <input
-              id="password"
-              type="password"
-              autoComplete="current-password"
-              value={password}
-              disabled={loading}
-              onKeyDown={
-                handleKeyDown
-              }
-              onChange={(
-                event
-              ) =>
-                setPassword(
-                  event.target.value
-                )
-              }
-              placeholder="Enter your password"
-              className="w-full rounded-xl border border-gray-300 bg-white p-3.5 text-slate-900 outline-none focus:border-blue-600 focus:ring-2 focus:ring-blue-200 disabled:bg-gray-100"
-            />
+            <div className="relative">
+
+              <input
+                id="password"
+                type={
+                  showPassword
+                    ? "text"
+                    : "password"
+                }
+                autoComplete="current-password"
+                value={password}
+                disabled={loading}
+                onKeyDown={
+                  handleKeyDown
+                }
+                onChange={(
+                  event
+                ) =>
+                  setPassword(
+                    event.target.value
+                  )
+                }
+                placeholder="Enter your password"
+                className="w-full rounded-xl border border-gray-300 bg-white p-3.5 pr-14 text-slate-900 outline-none focus:border-blue-600 focus:ring-2 focus:ring-blue-200 disabled:bg-gray-100"
+              />
+
+              <button
+                type="button"
+                disabled={loading}
+                onClick={() =>
+                  setShowPassword(
+                    (
+                      current
+                    ) =>
+                      !current
+                  )
+                }
+                aria-label={
+                  showPassword
+                    ? "Hide password"
+                    : "Show password"
+                }
+                title={
+                  showPassword
+                    ? "Hide password"
+                    : "Show password"
+                }
+                className="absolute right-3 top-1/2 flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-lg text-xl transition hover:bg-slate-100 disabled:opacity-50"
+              >
+                {showPassword
+                  ? "🙈"
+                  : "👁️"}
+              </button>
+
+            </div>
+
+          </div>
+
+          {/* FORGOT PASSWORD */}
+
+          <div className="mt-3 text-right">
+
+            <a
+              href="/forgot-password"
+              className="text-sm font-bold text-blue-700 hover:text-blue-900 hover:underline"
+            >
+              Forgot Password?
+            </a>
 
           </div>
 
@@ -723,8 +706,6 @@ export default function LoginPage() {
               : "Login"}
           </button>
 
-          {/* DIVIDER */}
-
           <div className="my-6 flex items-center">
 
             <div className="flex-1 border-t border-gray-200" />
@@ -736,8 +717,6 @@ export default function LoginPage() {
             <div className="flex-1 border-t border-gray-200" />
 
           </div>
-
-          {/* REGISTER */}
 
           <a
             href="/register"

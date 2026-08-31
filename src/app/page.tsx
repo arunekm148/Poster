@@ -294,7 +294,7 @@ export default function Home() {
               onClick={goToRegister}
               className="min-h-[46px] rounded-xl bg-blue-700 px-5 text-sm font-bold text-white shadow-lg shadow-blue-200 transition hover:bg-blue-800"
             >
-              Get Started
+              Register
             </button>
           </div>
 
@@ -373,7 +373,7 @@ export default function Home() {
                   onClick={goToRegister}
                   className="min-h-[48px] rounded-xl bg-blue-700 font-black text-white"
                 >
-                  Join Now
+                  Register
                 </button>
               </div>
             </div>
@@ -418,7 +418,7 @@ export default function Home() {
                   onClick={goToRegister}
                   className="min-h-[54px] rounded-2xl bg-blue-700 px-6 text-base font-black text-white shadow-xl shadow-blue-200 transition active:scale-[0.98] sm:hover:-translate-y-1 sm:hover:bg-blue-800"
                 >
-                  Join Agents India →
+                  Register Now →
                 </button>
 
                 <button
@@ -958,7 +958,7 @@ export default function Home() {
                   onClick={goToRegister}
                   className="min-h-[52px] rounded-2xl bg-orange-500 px-7 font-black text-white shadow-lg transition active:scale-[0.98] sm:hover:bg-orange-600"
                 >
-                  Join Agents India
+                  Register Now
                 </button>
 
                 <button
@@ -1024,7 +1024,7 @@ export default function Home() {
 
           <div className="mt-7 border-t border-slate-200 pt-6 text-center text-[11px] leading-5 text-slate-400 sm:flex sm:items-center sm:justify-between sm:text-left">
             <span>
-              © {new Date().getFullYear()} Agents India.
+              ©️ {new Date().getFullYear()} Agents India.
               All rights reserved.
             </span>
 
@@ -1060,7 +1060,7 @@ export default function Home() {
             onClick={goToRegister}
             className="min-h-[50px] rounded-xl bg-orange-500 text-sm font-black text-white shadow-md active:scale-[0.98]"
           >
-            Join Now →
+            Register →
           </button>
         </div>
       </div>

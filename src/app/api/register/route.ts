@@ -3,7 +3,14 @@ import prisma from "@/lib/prisma";
 
 import bcrypt from "bcryptjs";
 import crypto from "crypto";
+import nodemailer from "nodemailer";
 import { createClient } from "@supabase/supabase-js";
+
+/* -------------------------------------------------------------------------- */
+/* RUNTIME                                                                    */
+/* -------------------------------------------------------------------------- */
+
+export const runtime = "nodejs";
 
 /* -------------------------------------------------------------------------- */
 /* SUPABASE                                                                   */
@@ -38,6 +45,369 @@ const supabase =
       },
     }
   );
+
+/* -------------------------------------------------------------------------- */
+/* EMAIL TRANSPORTER                                                          */
+/* -------------------------------------------------------------------------- */
+
+function createMailTransporter() {
+  const smtpHost =
+    process.env.SMTP_HOST;
+
+  const smtpPort =
+    Number(
+      process.env.SMTP_PORT || "465"
+    );
+
+  const smtpUser =
+    process.env.SMTP_USER;
+
+  const smtpPass =
+    process.env.SMTP_PASS;
+
+  if (!smtpHost) {
+    throw new Error(
+      "SMTP_HOST is missing."
+    );
+  }
+
+  if (!smtpUser) {
+    throw new Error(
+      "SMTP_USER is missing."
+    );
+  }
+
+  if (!smtpPass) {
+    throw new Error(
+      "SMTP_PASS is missing."
+    );
+  }
+
+  return nodemailer.createTransport({
+    host: smtpHost,
+    port: smtpPort,
+    secure: smtpPort === 465,
+
+    auth: {
+      user: smtpUser,
+      pass: smtpPass,
+    },
+  });
+}
+
+/* -------------------------------------------------------------------------- */
+/* SEND REGISTRATION EMAIL                                                    */
+/* -------------------------------------------------------------------------- */
+
+async function sendRegistrationEmail({
+  name,
+  email,
+  phone,
+  password,
+}: {
+  name: string;
+  email: string;
+  phone: string;
+  password: string;
+}) {
+  const smtpUser =
+    process.env.SMTP_USER;
+
+  const fromName =
+    process.env.SMTP_FROM_NAME ||
+    "Agents India";
+
+  const supportEmail =
+    process.env.SUPPORT_EMAIL ||
+    "support@agentsindia.org";
+
+  if (!smtpUser) {
+    throw new Error(
+      "SMTP_USER is missing."
+    );
+  }
+
+  const transporter =
+    createMailTransporter();
+
+  const subject =
+    "Registration Confirmation - Agents India";
+
+  const text = `
+Dear ${name},
+
+Your registration with AgentsIndia.org has been completed successfully.
+
+User ID: ${phone}
+Password: ${password}
+
+You can use the above credentials to login to your account.
+
+You can change your password anytime from your Profile section after login.
+
+Please keep your login details confidential.
+
+For support:
+${supportEmail}
+
+Regards,
+Agents India
+agentsindia.org
+`.trim();
+
+  const html = `
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8" />
+</head>
+
+<body
+  style="
+    margin:0;
+    padding:0;
+    background:#f4f7fb;
+    font-family:Arial,Helvetica,sans-serif;
+    color:#1e293b;
+  "
+>
+  <table
+    width="100%"
+    cellpadding="0"
+    cellspacing="0"
+    style="
+      background:#f4f7fb;
+      padding:30px 15px;
+    "
+  >
+    <tr>
+      <td align="center">
+
+        <table
+          width="100%"
+          cellpadding="0"
+          cellspacing="0"
+          style="
+            max-width:600px;
+            background:#ffffff;
+            border-radius:12px;
+            overflow:hidden;
+          "
+        >
+
+          <tr>
+            <td
+              style="
+                background:#0f172a;
+                padding:28px;
+                text-align:center;
+              "
+            >
+              <div
+                style="
+                  color:#ffffff;
+                  font-size:26px;
+                  font-weight:bold;
+                "
+              >
+                Agents India
+              </div>
+
+              <div
+                style="
+                  color:#cbd5e1;
+                  font-size:14px;
+                  margin-top:6px;
+                "
+              >
+                agentsindia.org
+              </div>
+            </td>
+          </tr>
+
+          <tr>
+            <td
+              style="
+                padding:32px;
+              "
+            >
+
+              <h2
+                style="
+                  margin-top:0;
+                  color:#0f172a;
+                "
+              >
+                Registration Successful
+              </h2>
+
+              <p>
+                Dear <strong>${name}</strong>,
+              </p>
+
+              <p
+                style="
+                  line-height:1.6;
+                "
+              >
+                Your registration with
+                <strong>AgentsIndia.org</strong>
+                has been completed successfully.
+              </p>
+
+              <table
+                width="100%"
+                cellpadding="0"
+                cellspacing="0"
+                style="
+                  margin:24px 0;
+                  background:#f8fafc;
+                  border:1px solid #e2e8f0;
+                  border-radius:8px;
+                "
+              >
+
+                <tr>
+                  <td
+                    style="
+                      padding:16px 18px 5px;
+                      color:#64748b;
+                      font-size:13px;
+                    "
+                  >
+                    User ID
+                  </td>
+                </tr>
+
+                <tr>
+                  <td
+                    style="
+                      padding:0 18px 16px;
+                      font-size:18px;
+                      font-weight:bold;
+                    "
+                  >
+                    ${phone}
+                  </td>
+                </tr>
+
+                <tr>
+                  <td
+                    style="
+                      padding:0 18px 5px;
+                      color:#64748b;
+                      font-size:13px;
+                    "
+                  >
+                    Password
+                  </td>
+                </tr>
+
+                <tr>
+                  <td
+                    style="
+                      padding:0 18px 18px;
+                      font-size:18px;
+                      font-weight:bold;
+                    "
+                  >
+                    ${password}
+                  </td>
+                </tr>
+
+              </table>
+
+              <p
+                style="
+                  line-height:1.6;
+                "
+              >
+                You can use the above credentials
+                to login to your account.
+              </p>
+
+              <p
+                style="
+                  line-height:1.6;
+                "
+              >
+                You can change your password anytime
+                from your
+                <strong>Profile</strong>
+                section after login.
+              </p>
+
+              <p
+                style="
+                  line-height:1.6;
+                  color:#64748b;
+                "
+              >
+                Please keep your login details confidential.
+              </p>
+
+              <p
+                style="
+                  margin-top:25px;
+                  line-height:1.6;
+                "
+              >
+                Need help?<br />
+                Contact:
+                <strong>
+                  ${supportEmail}
+                </strong>
+              </p>
+
+            </td>
+          </tr>
+
+          <tr>
+            <td
+              style="
+                padding:20px;
+                text-align:center;
+                background:#f8fafc;
+                border-top:1px solid #e2e8f0;
+                font-size:13px;
+                color:#64748b;
+              "
+            >
+              Regards,<br />
+              <strong>Agents India</strong><br />
+              agentsindia.org
+            </td>
+          </tr>
+
+        </table>
+
+      </td>
+    </tr>
+  </table>
+</body>
+</html>
+`.trim();
+
+  const info =
+    await transporter.sendMail({
+      from:
+        `"${fromName}" <${smtpUser}>`,
+
+      to:
+        email,
+
+      subject,
+
+      text,
+
+      html,
+    });
+
+  console.log(
+    "✅ REGISTRATION EMAIL SENT:",
+    info.messageId
+  );
+}
 
 /* -------------------------------------------------------------------------- */
 /* REGISTER AGENT                                                             */
@@ -502,6 +872,35 @@ export async function POST(
       });
 
     /* ---------------------------------------------------------------------- */
+    /* SEND REGISTRATION EMAIL                                                */
+    /* ---------------------------------------------------------------------- */
+
+    let emailSent =
+      false;
+
+    try {
+      console.log(
+        "📧 SENDING REGISTRATION EMAIL TO:",
+        email
+      );
+
+      await sendRegistrationEmail({
+        name,
+        email,
+        phone,
+        password,
+      });
+
+      emailSent =
+        true;
+    } catch (mailError) {
+      console.error(
+        "❌ REGISTRATION EMAIL ERROR:",
+        mailError
+      );
+    }
+
+    /* ---------------------------------------------------------------------- */
     /* SUCCESS                                                                */
     /* ---------------------------------------------------------------------- */
 
@@ -510,7 +909,11 @@ export async function POST(
         success: true,
 
         message:
-          "Agent registered successfully. You can now login.",
+          emailSent
+            ? "Agent registered successfully. Registration details have been sent to your email."
+            : "Agent registered successfully, but confirmation email could not be sent.",
+
+        emailSent,
 
         user,
       },
