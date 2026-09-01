@@ -565,14 +565,12 @@ export default function AdminMediaPage() {
     try {
       setDownloadingPosterId(poster.id);
 
-      const params = new URLSearchParams();
-
-      params.set("url", poster.fileUrl);
-      params.set("title", poster.title);
-
       const response = await fetch(
-        `/api/posters/download?${params.toString()}`,
+        `/api/posters/download?id=${encodeURIComponent(
+          poster.id
+        )}`,
         {
+          method: "GET",
           cache: "no-store",
         }
       );
@@ -588,9 +586,17 @@ export default function AdminMediaPage() {
 
       const blob = await response.blob();
 
-      const objectUrl = URL.createObjectURL(blob);
+      if (!blob.size) {
+        throw new Error(
+          "Downloaded poster is empty."
+        );
+      }
 
-      const link = document.createElement("a");
+      const objectUrl =
+        URL.createObjectURL(blob);
+
+      const link =
+        document.createElement("a");
 
       link.href = objectUrl;
 
@@ -616,7 +622,11 @@ export default function AdminMediaPage() {
 
       document.body.removeChild(link);
 
-      URL.revokeObjectURL(objectUrl);
+      setTimeout(() => {
+        URL.revokeObjectURL(
+          objectUrl
+        );
+      }, 1000);
     } catch (error) {
       console.error(
         "ADMIN POSTER DOWNLOAD ERROR:",
@@ -1397,8 +1407,6 @@ export default function AdminMediaPage() {
                             Added {formatDate(poster.createdAt)}
                           </p>
 
-                          {/* ORIGINAL DOWNLOAD - ADMIN ONLY */}
-
                           <button
                             type="button"
                             disabled={
@@ -1416,8 +1424,6 @@ export default function AdminMediaPage() {
                               : "⬇ Download Original"}
                           </button>
 
-                          {/* EDIT */}
-
                           <button
                             type="button"
                             onClick={() => openEdit(poster)}
@@ -1425,8 +1431,6 @@ export default function AdminMediaPage() {
                           >
                             ✏ Edit / Re-upload Corrected Image
                           </button>
-
-                          {/* APPROVAL */}
 
                           {isPending && (
                             <div className="mt-2 grid grid-cols-2 gap-2">
@@ -1480,10 +1484,6 @@ export default function AdminMediaPage() {
           </>
         )}
       </div>
-
-      {/* -------------------------------------------------------------------- */}
-      {/* APPROVE + CREDIT MODAL                                               */}
-      {/* -------------------------------------------------------------------- */}
 
       {approvePosterTarget && (
         <div className="fixed inset-0 z-[80] flex items-center justify-center overflow-y-auto bg-black/60 p-4">
@@ -1597,10 +1597,6 @@ export default function AdminMediaPage() {
           </div>
         </div>
       )}
-
-      {/* -------------------------------------------------------------------- */}
-      {/* EDIT / RE-UPLOAD MODAL                                               */}
-      {/* -------------------------------------------------------------------- */}
 
       {editPoster && (
         <div className="fixed inset-0 z-50 overflow-y-auto bg-black/60 p-4">
@@ -1781,10 +1777,6 @@ export default function AdminMediaPage() {
           </div>
         </div>
       )}
-
-      {/* -------------------------------------------------------------------- */}
-      {/* NEW POSTER UPLOAD MODAL                                              */}
-      {/* -------------------------------------------------------------------- */}
 
       {uploadOpen && (
         <div className="fixed inset-0 z-50 overflow-y-auto bg-black/60 p-4">
