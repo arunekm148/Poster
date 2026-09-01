@@ -565,11 +565,24 @@ export default function AdminMediaPage() {
     try {
       setDownloadingPosterId(poster.id);
 
-      const response = await fetch(poster.fileUrl);
+      const params = new URLSearchParams();
+
+      params.set("url", poster.fileUrl);
+      params.set("title", poster.title);
+
+      const response = await fetch(
+        `/api/posters/download?${params.toString()}`,
+        {
+          cache: "no-store",
+        }
+      );
 
       if (!response.ok) {
+        const data = await readJson(response);
+
         throw new Error(
-          "Unable to download original image."
+          data.message ||
+            "Unable to download original image."
         );
       }
 
@@ -577,27 +590,39 @@ export default function AdminMediaPage() {
 
       const objectUrl = URL.createObjectURL(blob);
 
-      let extension = "jpg";
-
-      if (blob.type === "image/png") {
-        extension = "png";
-      } else if (blob.type === "image/webp") {
-        extension = "webp";
-      }
-
       const link = document.createElement("a");
 
       link.href = objectUrl;
-      link.download = `${safeFileName(
-        poster.title
-      )}-original.${extension}`;
+
+      const disposition =
+        response.headers.get(
+          "content-disposition"
+        );
+
+      const matchedName =
+        disposition?.match(
+          /filename="([^"]+)"/
+        )?.[1];
+
+      link.download =
+        matchedName ||
+        `${safeFileName(
+          poster.title
+        )}-original.jpg`;
 
       document.body.appendChild(link);
+
       link.click();
+
       document.body.removeChild(link);
 
       URL.revokeObjectURL(objectUrl);
     } catch (error) {
+      console.error(
+        "ADMIN POSTER DOWNLOAD ERROR:",
+        error
+      );
+
       window.alert(
         error instanceof Error
           ? error.message
