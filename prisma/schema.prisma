@@ -8,48 +8,52 @@ datasource db {
 }
 
 model User {
-  id                   String              @id @default(cuid())
-  name                 String
-  phone                String              @unique
-  email                String?             @unique
-  password             String
-  role                 UserRole            @default(AGENT)
-  accountMode          AgentAccountMode    @default(SELF_STAFF)
-  logoUrl              String?
-  isActive             Boolean             @default(true)
-  createdAt            DateTime            @default(now())
-  updatedAt            DateTime            @updatedAt
-  address              String?
-  district             String?
-  pincode              String?
-  state                String?
-  announcementsCreated AdminAnnouncement[] @relation("AnnouncementCreatedBy")
-  bankAccount          AgentBankAccount?
-  creditAccount        AgentCreditAccount?
-  consultants          Consultant[]
-  creditTransactions   CreditTransaction[]
-  customers            Customer[]
-  downloads            Download[]
-  emiFollowUps         EmiFollowUp[]
-  enquiries            Enquiry[]
-  followUps            FollowUp[]
-  mediaApprovals       Media[]             @relation("MediaApprovedBy")
-  mediaUploads         Media[]             @relation("MediaUploadedBy")
-  mediaRatings         MediaRating[]
-  passwordResetOtps    PasswordResetOtp[]
-  policies             Policy[]
-  renewalFollowUps     RenewalFollowUp[]
-  subAgents            SubAgent[]
-  supportReplies       SupportMessage[]    @relation("SupportMessageAdmin")
-  supportMessages      SupportMessage[]    @relation("SupportMessageAgent")
-  companies            UserCompany[]
-  withdrawalRequests   WithdrawalRequest[] @relation("AgentWithdrawals")
-  withdrawalsApproved  WithdrawalRequest[] @relation("WithdrawalApprovedBy")
-  staffs               Staff[]
-
-  examsCreated  Exam[]         @relation("ExamCreatedBy")
-  examAttempts  ExamAttempt[]
-  examBookmarks ExamBookmark[]
+  id                       String                     @id @default(cuid())
+  name                     String
+  phone                    String                     @unique
+  email                    String?                    @unique
+  password                 String
+  role                     UserRole                   @default(AGENT)
+  accountMode              AgentAccountMode           @default(SELF_STAFF)
+  logoUrl                  String?
+  isActive                 Boolean                    @default(true)
+  createdAt                DateTime                   @default(now())
+  updatedAt                DateTime                   @updatedAt
+  address                  String?
+  district                 String?
+  pincode                  String?
+  state                    String?
+  announcementsCreated     AdminAnnouncement[]        @relation("AnnouncementCreatedBy")
+  bankAccount              AgentBankAccount?
+  creditAccount            AgentCreditAccount?
+  AttendanceHoliday        AttendanceHoliday[]
+  AttendanceRegularization AttendanceRegularization[]
+  AttendanceSetting        AttendanceSetting?
+  consultants              Consultant[]
+  creditTransactions       CreditTransaction[]
+  customers                Customer[]
+  downloads                Download[]
+  emiFollowUps             EmiFollowUp[]
+  enquiries                Enquiry[]
+  examsCreated             Exam[]                     @relation("ExamCreatedBy")
+  examAttempts             ExamAttempt[]
+  examBookmarks            ExamBookmark[]
+  followUps                FollowUp[]
+  LeaveRequest             LeaveRequest[]
+  mediaApprovals           Media[]                    @relation("MediaApprovedBy")
+  mediaUploads             Media[]                    @relation("MediaUploadedBy")
+  mediaRatings             MediaRating[]
+  passwordResetOtps        PasswordResetOtp[]
+  policies                 Policy[]
+  renewalFollowUps         RenewalFollowUp[]
+  staffs                   Staff[]
+  StaffAttendance          StaffAttendance[]
+  subAgents                SubAgent[]
+  supportReplies           SupportMessage[]           @relation("SupportMessageAdmin")
+  supportMessages          SupportMessage[]           @relation("SupportMessageAgent")
+  companies                UserCompany[]
+  withdrawalRequests       WithdrawalRequest[]        @relation("AgentWithdrawals")
+  withdrawalsApproved      WithdrawalRequest[]        @relation("WithdrawalApprovedBy")
 }
 
 model Company {
@@ -634,105 +638,115 @@ model PlatformSetting {
 }
 
 model Staff {
-  id        String @id @default(cuid())
-  userId    String
-  staffCode String
-  name      String
-  phone     String @unique
-  password  String
-
-  whatsapp String?
-  email    String?
-
-  staffRole   StaffRole @default(STAFF)
-  designation String?
-  department  String?
-
-  supervisorId String?
-
-  address  String?
-  district String?
-  state    String?
-  pincode  String?
-
-  joiningDate DateTime?
-  notes       String?
-
-  loginEnabled Boolean @default(true)
-  isActive     Boolean @default(true)
-
-  inactiveReason String?
-  inactiveAt     DateTime?
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  supervisor  Staff?  @relation("StaffSupervisor", fields: [supervisorId], references: [id])
-  teamMembers Staff[] @relation("StaffSupervisor")
-
-  attendance StaffAttendance[]
+  id                       String                     @id @default(cuid())
+  userId                   String
+  staffCode                String
+  name                     String
+  phone                    String                     @unique
+  password                 String
+  whatsapp                 String?
+  email                    String?
+  staffRole                StaffRole                  @default(STAFF)
+  designation              String?
+  department               String?
+  supervisorId             String?
+  address                  String?
+  district                 String?
+  state                    String?
+  pincode                  String?
+  joiningDate              DateTime?
+  notes                    String?
+  loginEnabled             Boolean                    @default(true)
+  isActive                 Boolean                    @default(true)
+  inactiveReason           String?
+  inactiveAt               DateTime?
+  createdAt                DateTime                   @default(now())
+  updatedAt                DateTime                   @updatedAt
+  workMode                 StaffWorkMode              @default(OFFICE)
+  AttendanceRegularization AttendanceRegularization[]
+  LeaveRequest             LeaveRequest[]
+  supervisor               Staff?                     @relation("StaffSupervisor", fields: [supervisorId], references: [id])
+  teamMembers              Staff[]                    @relation("StaffSupervisor")
+  user                     User                       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  attendance               StaffAttendance[]
 
   @@unique([userId, staffCode])
   @@index([userId])
   @@index([supervisorId])
   @@index([staffRole])
   @@index([isActive])
+  @@index([userId, isActive])
+  @@index([userId, workMode])
+  @@index([workMode])
 }
 
 model StaffAttendance {
-  id      String @id @default(cuid())
-  staffId String
-  userId  String
-
-  date     DateTime
-  checkIn  DateTime?
-  checkOut DateTime?
-
-  status String?
-  notes  String?
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  staff Staff @relation(fields: [staffId], references: [id], onDelete: Cascade)
+  id                       String                     @id @default(cuid())
+  staffId                  String
+  userId                   String
+  date                     DateTime
+  checkIn                  DateTime?
+  checkOut                 DateTime?
+  notes                    String?
+  createdAt                DateTime                   @default(now())
+  updatedAt                DateTime                   @updatedAt
+  adminEdited              Boolean                    @default(false)
+  adminEditedAt            DateTime?
+  adminEditedById          String?
+  checkInIp                String?
+  checkInPhotoUrl          String?
+  checkInSource            AttendanceSource?
+  checkInUserAgent         String?
+  checkOutIp               String?
+  checkOutPhotoUrl         String?
+  checkOutSource           AttendanceSource?
+  checkOutUserAgent        String?
+  lateMinutes              Int                        @default(0)
+  workingMinutes           Int?
+  status                   AttendanceStatus           @default(PRESENT)
+  workLocation             AttendanceWorkLocation     @default(OFFICE)
+  checkInAccuracyMeters    Float?
+  checkInDistanceMeters    Int?
+  checkInGeofencePassed    Boolean?
+  checkInLatitude          Decimal?                   @db.Decimal(10, 7)
+  checkInLongitude         Decimal?                   @db.Decimal(10, 7)
+  checkOutAccuracyMeters   Float?
+  checkOutDistanceMeters   Int?
+  checkOutGeofencePassed   Boolean?
+  checkOutLatitude         Decimal?                   @db.Decimal(10, 7)
+  checkOutLongitude        Decimal?                   @db.Decimal(10, 7)
+  AttendanceRegularization AttendanceRegularization[]
+  staff                    Staff                      @relation(fields: [staffId], references: [id], onDelete: Cascade)
+  User                     User                       @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([staffId, date])
   @@index([staffId])
   @@index([userId])
   @@index([date])
+  @@index([staffId, date])
+  @@index([status])
+  @@index([userId, date])
+  @@index([userId, status, date])
+  @@index([userId, workLocation, date])
+  @@index([workLocation])
 }
 
-/**
- * --------------------------------------------------------------------------
- */
-/**
- * EXAM MANAGEMENT
- */
-/**
- * --------------------------------------------------------------------------
- */
-
 model Exam {
-  id          String  @id @default(cuid())
-  code        String  @unique
+  id          String             @id @default(cuid())
+  code        String             @unique
   title       String
   description String?
-  isActive    Boolean @default(true)
-  isPublished Boolean @default(false)
-
+  isActive    Boolean            @default(true)
+  isPublished Boolean            @default(false)
   createdById String?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-
-  createdBy User? @relation("ExamCreatedBy", fields: [createdById], references: [id])
-
-  languages ExamLanguageLink[]
-  modules   ExamModule[]
-  questions ExamQuestion[]
-  tests     ExamTest[]
-  attempts  ExamAttempt[]
+  createdAt   DateTime           @default(now())
+  updatedAt   DateTime           @updatedAt
+  createdBy   User?              @relation("ExamCreatedBy", fields: [createdById], references: [id])
+  attempts    ExamAttempt[]
+  languages   ExamLanguageLink[]
+  modules     ExamModule[]
+  questions   ExamQuestion[]
+  tests       ExamTest[]
 
   @@index([isActive])
   @@index([isPublished])
@@ -741,32 +755,30 @@ model Exam {
 }
 
 model ExamLanguage {
-  id         String   @id @default(cuid())
-  code       String   @unique
-  name       String
-  nativeName String
-  isActive   Boolean  @default(true)
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
-
+  id           String                    @id @default(cuid())
+  code         String                    @unique
+  name         String
+  nativeName   String
+  isActive     Boolean                   @default(true)
+  createdAt    DateTime                  @default(now())
+  updatedAt    DateTime                  @updatedAt
+  attempts     ExamAttempt[]
   exams        ExamLanguageLink[]
   translations ExamQuestionTranslation[]
-  attempts     ExamAttempt[]
 
   @@index([isActive])
   @@index([name])
 }
 
 model ExamLanguageLink {
-  id         String   @id @default(cuid())
+  id         String       @id @default(cuid())
   examId     String
   languageId String
-  isDefault  Boolean  @default(false)
-  isActive   Boolean  @default(true)
-  createdAt  DateTime @default(now())
-
-  exam     Exam         @relation(fields: [examId], references: [id], onDelete: Cascade)
-  language ExamLanguage @relation(fields: [languageId], references: [id], onDelete: Cascade)
+  isDefault  Boolean      @default(false)
+  isActive   Boolean      @default(true)
+  createdAt  DateTime     @default(now())
+  exam       Exam         @relation(fields: [examId], references: [id], onDelete: Cascade)
+  language   ExamLanguage @relation(fields: [languageId], references: [id], onDelete: Cascade)
 
   @@unique([examId, languageId])
   @@index([examId])
@@ -775,22 +787,21 @@ model ExamLanguageLink {
 }
 
 model ExamModule {
-  id          String   @id @default(cuid())
+  id          String         @id @default(cuid())
   examId      String
   code        String
   name        String
   description String?
   emoji       String?
-  sortOrder   Int      @default(0)
-  isActive    Boolean  @default(true)
-  isPublished Boolean  @default(false)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-
-  exam      Exam           @relation(fields: [examId], references: [id], onDelete: Cascade)
-  chapters  ExamChapter[]
-  questions ExamQuestion[]
-  tests     ExamTest[]
+  sortOrder   Int            @default(0)
+  isActive    Boolean        @default(true)
+  isPublished Boolean        @default(false)
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+  chapters    ExamChapter[]
+  exam        Exam           @relation(fields: [examId], references: [id], onDelete: Cascade)
+  questions   ExamQuestion[]
+  tests       ExamTest[]
 
   @@unique([examId, code])
   @@index([examId])
@@ -799,20 +810,19 @@ model ExamModule {
 }
 
 model ExamChapter {
-  id          String   @id @default(cuid())
+  id          String         @id @default(cuid())
   moduleId    String
   code        String
   title       String
   description String?
-  sortOrder   Int      @default(0)
-  isActive    Boolean  @default(true)
-  isPublished Boolean  @default(false)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-
-  module    ExamModule     @relation(fields: [moduleId], references: [id], onDelete: Cascade)
-  questions ExamQuestion[]
-  tests     ExamTest[]
+  sortOrder   Int            @default(0)
+  isActive    Boolean        @default(true)
+  isPublished Boolean        @default(false)
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+  module      ExamModule     @relation(fields: [moduleId], references: [id], onDelete: Cascade)
+  questions   ExamQuestion[]
+  tests       ExamTest[]
 
   @@unique([moduleId, code])
   @@index([moduleId])
@@ -821,27 +831,26 @@ model ExamChapter {
 }
 
 model ExamQuestion {
-  id            String           @id @default(cuid())
+  id            String                    @id @default(cuid())
   examId        String
   moduleId      String
   chapterId     String?
   code          String
-  questionType  ExamQuestionType @default(MCQ)
+  questionType  ExamQuestionType          @default(MCQ)
   correctOption ExamOption
-  difficulty    ExamDifficulty   @default(MEDIUM)
-  sortOrder     Int              @default(0)
-  isActive      Boolean          @default(true)
-  isPublished   Boolean          @default(false)
-  createdAt     DateTime         @default(now())
-  updatedAt     DateTime         @updatedAt
-
-  exam         Exam                      @relation(fields: [examId], references: [id], onDelete: Cascade)
-  module       ExamModule                @relation(fields: [moduleId], references: [id], onDelete: Cascade)
-  chapter      ExamChapter?              @relation(fields: [chapterId], references: [id], onDelete: SetNull)
-  translations ExamQuestionTranslation[]
-  testLinks    ExamTestQuestion[]
-  answers      ExamAttemptAnswer[]
-  bookmarks    ExamBookmark[]
+  difficulty    ExamDifficulty            @default(MEDIUM)
+  sortOrder     Int                       @default(0)
+  isActive      Boolean                   @default(true)
+  isPublished   Boolean                   @default(false)
+  createdAt     DateTime                  @default(now())
+  updatedAt     DateTime                  @updatedAt
+  answers       ExamAttemptAnswer[]
+  bookmarks     ExamBookmark[]
+  chapter       ExamChapter?              @relation(fields: [chapterId], references: [id])
+  exam          Exam                      @relation(fields: [examId], references: [id], onDelete: Cascade)
+  module        ExamModule                @relation(fields: [moduleId], references: [id], onDelete: Cascade)
+  translations  ExamQuestionTranslation[]
+  testLinks     ExamTestQuestion[]
 
   @@unique([examId, code])
   @@index([examId])
@@ -853,7 +862,7 @@ model ExamQuestion {
 }
 
 model ExamQuestionTranslation {
-  id           String   @id @default(cuid())
+  id           String       @id @default(cuid())
   questionId   String
   languageId   String
   questionText String
@@ -862,11 +871,10 @@ model ExamQuestionTranslation {
   optionC      String
   optionD      String
   explanation  String?
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
-
-  question ExamQuestion @relation(fields: [questionId], references: [id], onDelete: Cascade)
-  language ExamLanguage @relation(fields: [languageId], references: [id], onDelete: Cascade)
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+  language     ExamLanguage @relation(fields: [languageId], references: [id], onDelete: Cascade)
+  question     ExamQuestion @relation(fields: [questionId], references: [id], onDelete: Cascade)
 
   @@unique([questionId, languageId])
   @@index([questionId])
@@ -874,29 +882,28 @@ model ExamQuestionTranslation {
 }
 
 model ExamTest {
-  id                 String       @id @default(cuid())
+  id                 String             @id @default(cuid())
   examId             String
   moduleId           String?
   chapterId          String?
   code               String
   title              String
   description        String?
-  type               ExamTestType @default(PRACTICE)
-  questionCount      Int          @default(10)
+  type               ExamTestType       @default(PRACTICE)
+  questionCount      Int                @default(10)
   durationMinutes    Int?
-  passPercentage     Decimal?     @db.Decimal(5, 2)
-  randomizeQuestions Boolean      @default(true)
-  randomizeOptions   Boolean      @default(false)
-  isActive           Boolean      @default(true)
-  isPublished        Boolean      @default(false)
-  createdAt          DateTime     @default(now())
-  updatedAt          DateTime     @updatedAt
-
-  exam      Exam               @relation(fields: [examId], references: [id], onDelete: Cascade)
-  module    ExamModule?        @relation(fields: [moduleId], references: [id], onDelete: SetNull)
-  chapter   ExamChapter?       @relation(fields: [chapterId], references: [id], onDelete: SetNull)
-  questions ExamTestQuestion[]
-  attempts  ExamAttempt[]
+  passPercentage     Decimal?           @db.Decimal(5, 2)
+  randomizeQuestions Boolean            @default(true)
+  randomizeOptions   Boolean            @default(false)
+  isActive           Boolean            @default(true)
+  isPublished        Boolean            @default(false)
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
+  attempts           ExamAttempt[]
+  chapter            ExamChapter?       @relation(fields: [chapterId], references: [id])
+  exam               Exam               @relation(fields: [examId], references: [id], onDelete: Cascade)
+  module             ExamModule?        @relation(fields: [moduleId], references: [id])
+  questions          ExamTestQuestion[]
 
   @@unique([examId, code])
   @@index([examId])
@@ -907,14 +914,13 @@ model ExamTest {
 }
 
 model ExamTestQuestion {
-  id         String   @id @default(cuid())
+  id         String       @id @default(cuid())
   testId     String
   questionId String
-  sortOrder  Int      @default(0)
-  createdAt  DateTime @default(now())
-
-  test     ExamTest     @relation(fields: [testId], references: [id], onDelete: Cascade)
-  question ExamQuestion @relation(fields: [questionId], references: [id], onDelete: Cascade)
+  sortOrder  Int          @default(0)
+  createdAt  DateTime     @default(now())
+  question   ExamQuestion @relation(fields: [questionId], references: [id], onDelete: Cascade)
+  test       ExamTest     @relation(fields: [testId], references: [id], onDelete: Cascade)
 
   @@unique([testId, questionId])
   @@index([testId])
@@ -923,32 +929,29 @@ model ExamTestQuestion {
 }
 
 model ExamAttempt {
-  id         String            @id @default(cuid())
-  userId     String
-  examId     String
-  testId     String?
-  languageId String?
-  mode       ExamAttemptMode
-  status     ExamAttemptStatus @default(IN_PROGRESS)
-
-  totalQuestions  Int      @default(0)
-  correctCount    Int      @default(0)
-  wrongCount      Int      @default(0)
-  unansweredCount Int      @default(0)
-  score           Decimal? @db.Decimal(10, 2)
-  percentage      Decimal? @db.Decimal(5, 2)
+  id              String              @id @default(cuid())
+  userId          String
+  examId          String
+  testId          String?
+  languageId      String?
+  mode            ExamAttemptMode
+  status          ExamAttemptStatus   @default(IN_PROGRESS)
+  totalQuestions  Int                 @default(0)
+  correctCount    Int                 @default(0)
+  wrongCount      Int                 @default(0)
+  unansweredCount Int                 @default(0)
+  score           Decimal?            @db.Decimal(10, 2)
+  percentage      Decimal?            @db.Decimal(5, 2)
   passed          Boolean?
-
-  startedAt   DateTime  @default(now())
-  submittedAt DateTime?
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
-
-  user     User                @relation(fields: [userId], references: [id], onDelete: Cascade)
-  exam     Exam                @relation(fields: [examId], references: [id], onDelete: Cascade)
-  test     ExamTest?           @relation(fields: [testId], references: [id], onDelete: SetNull)
-  language ExamLanguage?       @relation(fields: [languageId], references: [id], onDelete: SetNull)
-  answers  ExamAttemptAnswer[]
+  startedAt       DateTime            @default(now())
+  submittedAt     DateTime?
+  createdAt       DateTime            @default(now())
+  updatedAt       DateTime            @updatedAt
+  exam            Exam                @relation(fields: [examId], references: [id], onDelete: Cascade)
+  language        ExamLanguage?       @relation(fields: [languageId], references: [id])
+  test            ExamTest?           @relation(fields: [testId], references: [id])
+  user            User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  answers         ExamAttemptAnswer[]
 
   @@index([userId])
   @@index([examId])
@@ -960,18 +963,17 @@ model ExamAttempt {
 }
 
 model ExamAttemptAnswer {
-  id               String      @id @default(cuid())
+  id               String       @id @default(cuid())
   attemptId        String
   questionId       String
   selectedOption   ExamOption?
   isCorrect        Boolean?
   timeSpentSeconds Int?
   answeredAt       DateTime?
-  createdAt        DateTime    @default(now())
-  updatedAt        DateTime    @updatedAt
-
-  attempt  ExamAttempt  @relation(fields: [attemptId], references: [id], onDelete: Cascade)
-  question ExamQuestion @relation(fields: [questionId], references: [id], onDelete: Cascade)
+  createdAt        DateTime     @default(now())
+  updatedAt        DateTime     @updatedAt
+  attempt          ExamAttempt  @relation(fields: [attemptId], references: [id], onDelete: Cascade)
+  question         ExamQuestion @relation(fields: [questionId], references: [id], onDelete: Cascade)
 
   @@unique([attemptId, questionId])
   @@index([attemptId])
@@ -979,13 +981,12 @@ model ExamAttemptAnswer {
 }
 
 model ExamBookmark {
-  id         String   @id @default(cuid())
+  id         String       @id @default(cuid())
   userId     String
   questionId String
-  createdAt  DateTime @default(now())
-
-  user     User         @relation(fields: [userId], references: [id], onDelete: Cascade)
-  question ExamQuestion @relation(fields: [questionId], references: [id], onDelete: Cascade)
+  createdAt  DateTime     @default(now())
+  question   ExamQuestion @relation(fields: [questionId], references: [id], onDelete: Cascade)
+  user       User         @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([userId, questionId])
   @@index([userId])
@@ -993,15 +994,111 @@ model ExamBookmark {
   @@index([userId, createdAt])
 }
 
-/**
- * --------------------------------------------------------------------------
- */
-/**
- * ENUMS
- */
-/**
- * --------------------------------------------------------------------------
- */
+model AttendanceHoliday {
+  id          String   @id
+  userId      String
+  date        DateTime
+  name        String
+  description String?
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime
+  User        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, date])
+  @@index([date])
+  @@index([isActive])
+  @@index([userId])
+  @@index([userId, isActive, date])
+}
+
+model AttendanceRegularization {
+  id                String               @id
+  staffId           String
+  userId            String
+  attendanceId      String?
+  attendanceDate    DateTime
+  requestedCheckIn  DateTime?
+  requestedCheckOut DateTime?
+  reason            String
+  status            RegularizationStatus @default(PENDING)
+  reviewedById      String?
+  reviewedAt        DateTime?
+  adminRemarks      String?
+  createdAt         DateTime             @default(now())
+  updatedAt         DateTime
+  StaffAttendance   StaffAttendance?     @relation(fields: [attendanceId], references: [id])
+  Staff             Staff                @relation(fields: [staffId], references: [id], onDelete: Cascade)
+  User              User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([attendanceDate])
+  @@index([attendanceId])
+  @@index([staffId, attendanceDate])
+  @@index([staffId])
+  @@index([staffId, status])
+  @@index([status])
+  @@index([userId])
+  @@index([userId, status])
+}
+
+model AttendanceSetting {
+  id                           String                     @id
+  userId                       String                     @unique
+  officeStartTime              String                     @default("09:30")
+  officeEndTime                String                     @default("18:00")
+  graceMinutes                 Int                        @default(15)
+  halfDayCheckInTime           String                     @default("13:00")
+  minimumFullDayMinutes        Int                        @default(480)
+  minimumHalfDayMinutes        Int                        @default(240)
+  requireCheckInPhoto          Boolean                    @default(true)
+  requireCheckOutPhoto         Boolean                    @default(false)
+  requireCheckInIp             Boolean                    @default(true)
+  requireCheckOutIp            Boolean                    @default(true)
+  timezone                     String                     @default("Asia/Kolkata")
+  weekOffDays                  String[]                   @default(["SUNDAY"])
+  isActive                     Boolean                    @default(true)
+  createdAt                    DateTime                   @default(now())
+  updatedAt                    DateTime
+  checkInVerificationMode      AttendanceVerificationMode @default(IP_AND_PHOTO)
+  checkOutVerificationMode     AttendanceVerificationMode @default(IP_ONLY)
+  fieldVerificationMode        AttendanceVerificationMode @default(PHOTO_ONLY)
+  workFromHomeVerificationMode AttendanceVerificationMode @default(PHOTO_ONLY)
+  gpsAttendanceEnabled         Boolean                    @default(false)
+  maxGpsAccuracyMeters         Int                        @default(100)
+  officeLatitude               Decimal?                   @db.Decimal(10, 7)
+  officeLongitude              Decimal?                   @db.Decimal(10, 7)
+  officeRadiusMeters           Int                        @default(200)
+  requireGpsForCheckIn         Boolean                    @default(false)
+  requireGpsForCheckOut        Boolean                    @default(false)
+  User                         User                       @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model LeaveRequest {
+  id           String             @id
+  staffId      String
+  userId       String
+  leaveType    LeaveType          @default(CASUAL)
+  fromDate     DateTime
+  toDate       DateTime
+  reason       String
+  status       LeaveRequestStatus @default(PENDING)
+  reviewedById String?
+  reviewedAt   DateTime?
+  adminRemarks String?
+  createdAt    DateTime           @default(now())
+  updatedAt    DateTime
+  Staff        Staff              @relation(fields: [staffId], references: [id], onDelete: Cascade)
+  User         User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([fromDate])
+  @@index([staffId, fromDate, toDate])
+  @@index([staffId])
+  @@index([staffId, status])
+  @@index([status])
+  @@index([toDate])
+  @@index([userId])
+  @@index([userId, status])
+}
 
 enum UserRole {
   AGENT
@@ -1202,4 +1299,62 @@ enum ExamAttemptStatus {
   IN_PROGRESS
   SUBMITTED
   ABANDONED
+}
+
+enum AttendanceSource {
+  WEB
+  ANDROID
+  IOS
+  ADMIN
+}
+
+enum AttendanceStatus {
+  PRESENT
+  LATE
+  HALF_DAY
+  ABSENT
+  ON_LEAVE
+  WEEK_OFF
+  HOLIDAY
+}
+
+enum AttendanceVerificationMode {
+  IP_ONLY
+  PHOTO_ONLY
+  IP_AND_PHOTO
+}
+
+enum AttendanceWorkLocation {
+  OFFICE
+  HOME
+  FIELD
+}
+
+enum LeaveRequestStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  CANCELLED
+}
+
+enum LeaveType {
+  CASUAL
+  SICK
+  EARNED
+  UNPAID
+  OTHER
+}
+
+enum RegularizationStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  CANCELLED
+}
+
+enum StaffWorkMode {
+  OFFICE
+  WORK_FROM_HOME
+  HYBRID
+  FIELD
 }

@@ -3363,7 +3363,7 @@ View List →
 
 {canUseStaff && (
 <Link
-href="/staff/add"
+href="/staff"
 className="rounded-2xl border border-blue-200 bg-blue-50 p-4 shadow-sm transition hover:border-blue-400 hover:shadow-md"
 >
 <div className="text-2xl">
@@ -3371,15 +3371,15 @@ className="rounded-2xl border border-blue-200 bg-blue-50 p-4 shadow-sm transitio
 </div>
 
 <p className="mt-2 text-xs font-semibold text-blue-700">
-Staff Management
+Staff & Attendance
 </p>
 
 <p className="text-lg font-black text-blue-950">
-+ Add Staff
+Manage Staff & Attendance
 </p>
 
 <p className="mt-1 text-[10px] font-bold text-blue-600">
-Login & Permissions →
+Add / Edit Staff • Attendance →
 </p>
 </Link>
 )}

@@ -1,152 +1,507 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+} from "react";
 
 /* -------------------------------------------------------------------------- */
-/* TYPES */
+/* TYPES                                                                      */
 /* -------------------------------------------------------------------------- */
 
-type StaffStatus = "ACTIVE" | "INACTIVE";
+type LoggedInUser = {
+  id?: string;
+  userId?: string;
+  role?: string;
+  accountType?: string;
+  name?: string;
+};
 
-type StaffMember = {
+type SupervisorInfo = {
   id: string;
   staffCode: string;
   name: string;
-  phone?: string;
-  email?: string;
-  designation?: string;
-  department?: string;
-  supervisorName?: string | null;
-  subAgentsManaged: number;
-  policiesThisMonth: number;
-  enquiriesThisMonth: number;
-  renewalsHandled: number;
-  attendancePercent: number;
-  status: StaffStatus;
+  staffRole: string;
 };
 
+type StaffMember = {
+  id: string;
+  userId: string;
+
+  staffCode: string;
+  name: string;
+
+  phone?: string | null;
+  whatsapp?: string | null;
+  email?: string | null;
+
+  staffRole: "STAFF" | "SUPERVISOR";
+
+  designation?: string | null;
+  department?: string | null;
+
+  supervisorId?: string | null;
+
+  address?: string | null;
+  district?: string | null;
+  state?: string | null;
+  pincode?: string | null;
+
+  joiningDate?: string | null;
+  notes?: string | null;
+
+  loginEnabled: boolean;
+  isActive: boolean;
+
+  inactiveReason?: string | null;
+  inactiveAt?: string | null;
+
+  createdAt?: string;
+  updatedAt?: string;
+
+  supervisor?: SupervisorInfo | null;
+
+  _count?: {
+    teamMembers?: number;
+    attendance?: number;
+  };
+};
+
+type StaffApiResponse = {
+  success?: boolean;
+  message?: string;
+  staff?: StaffMember[];
+};
+
+type DirectoryFilter =
+  | "ALL"
+  | "ACTIVE"
+  | "INACTIVE"
+  | "SUPERVISORS"
+  | "LOGIN_ENABLED";
+
 /* -------------------------------------------------------------------------- */
-/* TEMPORARY STAFF DATA                                                       */
+/* HELPERS                                                                    */
 /* -------------------------------------------------------------------------- */
 
-const demoStaff: StaffMember[] = [
-  {
-    id: "1",
-    staffCode: "STF001",
-    name: "Rahul",
-    phone: "9876543210",
-    email: "rahul@example.com",
-    designation: "Supervisor",
-    department: "Sales",
-    supervisorName: null,
-    subAgentsManaged: 8,
-    policiesThisMonth: 6,
-    enquiriesThisMonth: 19,
-    renewalsHandled: 12,
-    attendancePercent: 96,
-    status: "ACTIVE",
-  },
-  {
-    id: "2",
-    staffCode: "STF002",
-    name: "Anil",
-    phone: "9876501234",
-    email: "anil@example.com",
-    designation: "Marketing Executive",
-    department: "Marketing",
-    supervisorName: "Rahul",
-    subAgentsManaged: 4,
-    policiesThisMonth: 3,
-    enquiriesThisMonth: 27,
-    renewalsHandled: 5,
-    attendancePercent: 92,
-    status: "ACTIVE",
-  },
-  {
-    id: "3",
-    staffCode: "STF003",
-    name: "Meera",
-    phone: "9895001122",
-    email: "meera@example.com",
-    designation: "Renewal Executive",
-    department: "Renewal",
-    supervisorName: "Rahul",
-    subAgentsManaged: 2,
-    policiesThisMonth: 2,
-    enquiriesThisMonth: 8,
-    renewalsHandled: 21,
-    attendancePercent: 89,
-    status: "ACTIVE",
-  },
-];
+function getLoggedInAgent(): LoggedInUser | null {
+  if (typeof window === "undefined") {
+    return null;
+  }
+
+  const keys = [
+    "agentUser",
+    "user",
+  ];
+
+  for (const key of keys) {
+    const raw =
+      localStorage.getItem(key);
+
+    if (!raw) {
+      continue;
+    }
+
+    try {
+      const parsed =
+        JSON.parse(raw);
+
+      if (
+        parsed &&
+        (
+          parsed.role === "AGENT" ||
+          parsed.role === "ADMIN" ||
+          parsed.accountType === "USER"
+        )
+      ) {
+        return parsed;
+      }
+    } catch {
+      // Ignore invalid localStorage data.
+    }
+  }
+
+  return null;
+}
+
+function formatDate(
+  value?: string | null
+): string {
+  if (!value) {
+    return "—";
+  }
+
+  const date =
+    new Date(value);
+
+  if (
+    Number.isNaN(
+      date.getTime()
+    )
+  ) {
+    return "—";
+  }
+
+  return date.toLocaleDateString(
+    "en-IN",
+    {
+      day: "2-digit",
+      month: "short",
+      year: "numeric",
+    }
+  );
+}
+
+function isSupervisor(
+  member: StaffMember
+): boolean {
+  if (
+    member.staffRole ===
+    "SUPERVISOR"
+  ) {
+    return true;
+  }
+
+  const designation =
+    String(
+      member.designation ||
+      ""
+    )
+      .trim()
+      .toLowerCase();
+
+  return designation.includes(
+    "supervisor"
+  );
+}
+
+function scrollToDirectory() {
+  if (
+    typeof document ===
+    "undefined"
+  ) {
+    return;
+  }
+
+  document
+    .getElementById(
+      "staff-directory"
+    )
+    ?.scrollIntoView({
+      behavior: "smooth",
+      block: "start",
+    });
+}
 
 /* -------------------------------------------------------------------------- */
 /* PAGE                                                                       */
 /* -------------------------------------------------------------------------- */
 
 export default function StaffPage() {
-  const [search, setSearch] = useState("");
-  const [statusFilter, setStatusFilter] = useState<
-    "ALL" | StaffStatus
-  >("ALL");
+  const [
+    loading,
+    setLoading,
+  ] =
+    useState(true);
 
-  const staff = demoStaff;
+  const [
+    error,
+    setError,
+  ] =
+    useState("");
 
-  const filteredStaff = useMemo(() => {
-    const value = search.trim().toLowerCase();
+  const [
+    search,
+    setSearch,
+  ] =
+    useState("");
 
-    return staff.filter((item) => {
-      if (
-        statusFilter !== "ALL" &&
-        item.status !== statusFilter
-      ) {
-        return false;
-      }
+  const [
+    directoryFilter,
+    setDirectoryFilter,
+  ] =
+    useState<DirectoryFilter>(
+      "ALL"
+    );
 
-      if (!value) {
-        return true;
-      }
+  const [
+    staff,
+    setStaff,
+  ] =
+    useState<StaffMember[]>([]);
 
-      return [
-        item.staffCode,
-        item.name,
-        item.phone,
-        item.email,
-        item.designation,
-        item.department,
-        item.supervisorName,
-      ].some((field) =>
-        String(field || "")
-          .toLowerCase()
-          .includes(value)
+  const loadStaff =
+    useCallback(
+      async (
+        userId: string
+      ) => {
+        try {
+          setLoading(true);
+          setError("");
+
+          const response =
+            await fetch(
+              `/api/staff?userId=${encodeURIComponent(
+                userId
+              )}`,
+              {
+                method: "GET",
+                credentials: "include",
+                cache: "no-store",
+              }
+            );
+
+          let data:
+            StaffApiResponse = {};
+
+          try {
+            data =
+              await response.json();
+          } catch {
+            data = {};
+          }
+
+          if (
+            !response.ok ||
+            !data.success
+          ) {
+            setError(
+              data.message ||
+              "Unable to load staff."
+            );
+
+            setStaff([]);
+
+            return;
+          }
+
+          setStaff(
+            Array.isArray(
+              data.staff
+            )
+              ? data.staff
+              : []
+          );
+        } catch (
+          loadError
+        ) {
+          console.error(
+            "LOAD STAFF ERROR:",
+            loadError
+          );
+
+          setError(
+            "Unable to connect to the staff server."
+          );
+
+          setStaff([]);
+        } finally {
+          setLoading(false);
+        }
+      },
+      []
+    );
+
+  useEffect(() => {
+    const loggedIn =
+      getLoggedInAgent();
+
+    const userId =
+      String(
+        loggedIn?.userId ||
+        loggedIn?.id ||
+        ""
+      ).trim();
+
+    if (!userId) {
+      setError(
+        "Agent login information was not found. Please log in again."
       );
-    });
-  }, [search, staff, statusFilter]);
 
-  const totalStaff = staff.length;
+      setLoading(false);
 
-  const activeStaff = staff.filter(
-    (item) => item.status === "ACTIVE"
-  ).length;
+      return;
+    }
 
-  const supervisors = staff.filter(
-    (item) =>
-      String(item.designation || "")
-        .toLowerCase()
-        .includes("supervisor")
-  ).length;
+    void loadStaff(userId);
+  }, [
+    loadStaff,
+  ]);
 
-  const subAgentsManaged = staff.reduce(
-    (total, item) =>
-      total + item.subAgentsManaged,
-    0
-  );
+  const filteredStaff =
+    useMemo(() => {
+      const value =
+        search
+          .trim()
+          .toLowerCase();
+
+      return staff.filter(
+        (
+          member
+        ) => {
+          if (
+            directoryFilter ===
+              "ACTIVE" &&
+            !member.isActive
+          ) {
+            return false;
+          }
+
+          if (
+            directoryFilter ===
+              "INACTIVE" &&
+            member.isActive
+          ) {
+            return false;
+          }
+
+          if (
+            directoryFilter ===
+              "SUPERVISORS" &&
+            !isSupervisor(
+              member
+            )
+          ) {
+            return false;
+          }
+
+          if (
+            directoryFilter ===
+              "LOGIN_ENABLED" &&
+            !(
+              member.loginEnabled &&
+              member.isActive
+            )
+          ) {
+            return false;
+          }
+
+          if (!value) {
+            return true;
+          }
+
+          return [
+            member.staffCode,
+            member.name,
+            member.phone,
+            member.email,
+            member.designation,
+            member.department,
+            member.supervisor?.name,
+          ].some(
+            (
+              field
+            ) =>
+              String(
+                field || ""
+              )
+                .toLowerCase()
+                .includes(
+                  value
+                )
+          );
+        }
+      );
+    }, [
+      search,
+      staff,
+      directoryFilter,
+    ]);
+
+  const totalStaff =
+    staff.length;
+
+  const activeStaff =
+    staff.filter(
+      (
+        member
+      ) =>
+        member.isActive
+    ).length;
+
+  const supervisors =
+    staff.filter(
+      (
+        member
+      ) =>
+        member.isActive &&
+        isSupervisor(
+          member
+        )
+    ).length;
+
+  const loginEnabled =
+    staff.filter(
+      (
+        member
+      ) =>
+        member.loginEnabled &&
+        member.isActive
+    ).length;
+
+  const attendanceRecords =
+    staff.reduce(
+      (
+        total,
+        member
+      ) =>
+        total +
+        Number(
+          member._count
+            ?.attendance ||
+          0
+        ),
+      0
+    );
+
+  function chooseDirectoryFilter(
+    filter:
+      DirectoryFilter
+  ) {
+    setDirectoryFilter(
+      filter
+    );
+
+    setSearch("");
+
+    setTimeout(
+      () => {
+        scrollToDirectory();
+      },
+      50
+    );
+  }
+
+  const directoryTitle =
+    useMemo(() => {
+      switch (
+        directoryFilter
+      ) {
+        case "ACTIVE":
+          return "Active Staff";
+
+        case "INACTIVE":
+          return "Inactive Staff";
+
+        case "SUPERVISORS":
+          return "Supervisors";
+
+        case "LOGIN_ENABLED":
+          return "Login Enabled Staff";
+
+        case "ALL":
+        default:
+          return "Staff Directory";
+      }
+    }, [
+      directoryFilter,
+    ]);
 
   return (
     <main className="min-h-screen bg-slate-50 pb-24 text-slate-950">
-
-      {/* HEADER */}
 
       <header className="border-b border-slate-200 bg-white shadow-sm">
         <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-4 px-4 py-5">
@@ -161,17 +516,19 @@ export default function StaffPage() {
             </Link>
 
             <div>
+
               <p className="text-xs font-black uppercase tracking-wider text-blue-700">
                 Team Management
               </p>
 
               <h1 className="text-2xl font-black">
-                Staff Management
+                Staff & Attendance
               </h1>
 
               <p className="mt-1 text-sm font-semibold text-slate-500">
-                Manage staff, supervisors, assignments and performance.
+                Manage staff, supervisors, login access and attendance administration.
               </p>
+
             </div>
 
           </div>
@@ -188,72 +545,200 @@ export default function StaffPage() {
 
       <section className="mx-auto max-w-7xl px-4 py-6">
 
-        {/* SUMMARY */}
+        {error && (
+          <div className="mb-5 rounded-2xl border border-red-200 bg-red-50 p-4 text-sm font-bold text-red-700">
+            ⚠️ {error}
+          </div>
+        )}
 
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
 
-          <SummaryCard
+          <ClickableSummaryCard
             label="Total Staff"
             value={totalStaff}
             emoji="👥"
+            active={
+              directoryFilter ===
+              "ALL"
+            }
+            onClick={() =>
+              chooseDirectoryFilter(
+                "ALL"
+              )
+            }
           />
 
-          <SummaryCard
+          <ClickableSummaryCard
             label="Active Staff"
             value={activeStaff}
             emoji="✅"
             valueClass="text-emerald-700"
             borderClass="border-emerald-200"
+            active={
+              directoryFilter ===
+              "ACTIVE"
+            }
+            onClick={() =>
+              chooseDirectoryFilter(
+                "ACTIVE"
+              )
+            }
           />
 
-          <SummaryCard
+          <ClickableSummaryCard
             label="Supervisors"
             value={supervisors}
             emoji="🧑‍💼"
             valueClass="text-violet-700"
             borderClass="border-violet-200"
+            active={
+              directoryFilter ===
+              "SUPERVISORS"
+            }
+            onClick={() =>
+              chooseDirectoryFilter(
+                "SUPERVISORS"
+              )
+            }
+          />
+
+          <ClickableSummaryCard
+            label="Login Enabled"
+            value={loginEnabled}
+            emoji="🔐"
+            valueClass="text-blue-700"
+            borderClass="border-blue-200"
+            active={
+              directoryFilter ===
+              "LOGIN_ENABLED"
+            }
+            onClick={() =>
+              chooseDirectoryFilter(
+                "LOGIN_ENABLED"
+              )
+            }
           />
 
           <SummaryCard
-            label="Sub Agents Managed"
-            value={subAgentsManaged}
-            emoji="🤝"
+            label="Attendance Records"
+            value={attendanceRecords}
+            emoji="🕒"
             valueClass="text-amber-700"
             borderClass="border-amber-200"
           />
 
         </div>
 
-        {/* QUICK MANAGEMENT */}
+        <div className="mt-6">
 
-        <div className="mt-5 grid gap-3 md:grid-cols-3">
+          <p className="text-xs font-black uppercase tracking-wider text-blue-700">
+            Staff Management
+          </p>
 
-          <QuickLink
-            href="/staff/add"
-            title="Add Staff"
-            description="Create a new staff member."
-            emoji="➕"
-          />
+          <h2 className="mt-1 text-xl font-black">
+            Team Administration
+          </h2>
 
-          <QuickLink
-            href="/sub-agents"
-            title="Sub-Agent Management"
-            description="Manage sub-agents and assignments."
-            emoji="🤝"
-          />
+          <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
 
-          <QuickLink
-            href="/renewals"
-            title="Renewal Work"
-            description="Review renewal workload and follow-ups."
-            emoji="🔄"
-          />
+            <QuickLink
+              href="/staff/add"
+              title="Add Staff"
+              description="Create staff or supervisor login."
+              emoji="➕"
+            />
+
+            <QuickLink
+              href="/sub-agents"
+              title="Sub-Agent Management"
+              description="Manage assignments and sub-agents."
+              emoji="🤝"
+            />
+
+            <QuickLink
+              href="/dashboard"
+              title="Agent Dashboard"
+              description="Return to main dashboard."
+              emoji="🏠"
+            />
+
+          </div>
 
         </div>
 
-        {/* SEARCH + FILTER */}
+        <div className="mt-7 rounded-3xl border border-blue-200 bg-blue-50 p-5">
 
-        <div className="mt-5 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+
+            <div>
+
+              <p className="text-xs font-black uppercase tracking-wider text-blue-700">
+                Attendance Management
+              </p>
+
+              <h2 className="mt-1 text-xl font-black text-blue-950">
+                Staff Attendance Administration
+              </h2>
+
+              <p className="mt-1 max-w-3xl text-sm font-semibold text-blue-700">
+                Manage attendance rules, approvals, leave and office verification.
+                Staff punch in and punch out is available only through individual staff login.
+              </p>
+
+            </div>
+
+            <div className="rounded-xl bg-white px-3 py-2 text-xs font-black text-blue-700">
+              🕒 Management
+            </div>
+
+          </div>
+
+          <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+
+            <AttendanceAdminCard
+              emoji="📊"
+              title="Today's Attendance"
+              description="See present, late, absent and not-punched staff."
+            />
+
+            <AttendanceAdminCard
+              emoji="📝"
+              title="Regularization"
+              description="Review missed punch correction requests."
+            />
+
+            <AttendanceAdminCard
+              emoji="🌴"
+              title="Leave Approvals"
+              description="Review and approve staff leave requests."
+            />
+
+            <AttendanceAdminCard
+              emoji="⚙️"
+              title="Attendance Settings"
+              description="Office timing, grace and verification rules."
+            />
+
+            <AttendanceAdminCard
+              emoji="🎉"
+              title="Holiday Management"
+              description="Configure company holidays and weekly offs."
+            />
+
+            <AttendanceAdminCard
+              emoji="📍"
+              title="GPS & Office Location"
+              description="Configure office coordinates and attendance radius."
+            />
+
+          </div>
+
+        </div>
+
+        <div
+          id="staff-directory"
+          className="mt-6 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"
+        >
 
           <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
 
@@ -262,7 +747,9 @@ export default function StaffPage() {
               <input
                 type="text"
                 value={search}
-                onChange={(event) =>
+                onChange={(
+                  event
+                ) =>
                   setSearch(
                     event.target.value
                   )
@@ -276,30 +763,73 @@ export default function StaffPage() {
             <div className="flex flex-wrap gap-2">
 
               <FilterButton
-                active={statusFilter === "ALL"}
+                active={
+                  directoryFilter ===
+                  "ALL"
+                }
                 onClick={() =>
-                  setStatusFilter("ALL")
+                  chooseDirectoryFilter(
+                    "ALL"
+                  )
                 }
               >
                 All
               </FilterButton>
 
               <FilterButton
-                active={statusFilter === "ACTIVE"}
+                active={
+                  directoryFilter ===
+                  "ACTIVE"
+                }
                 onClick={() =>
-                  setStatusFilter("ACTIVE")
+                  chooseDirectoryFilter(
+                    "ACTIVE"
+                  )
                 }
               >
                 Active
               </FilterButton>
 
               <FilterButton
-                active={statusFilter === "INACTIVE"}
+                active={
+                  directoryFilter ===
+                  "INACTIVE"
+                }
                 onClick={() =>
-                  setStatusFilter("INACTIVE")
+                  chooseDirectoryFilter(
+                    "INACTIVE"
+                  )
                 }
               >
                 Inactive
+              </FilterButton>
+
+              <FilterButton
+                active={
+                  directoryFilter ===
+                  "SUPERVISORS"
+                }
+                onClick={() =>
+                  chooseDirectoryFilter(
+                    "SUPERVISORS"
+                  )
+                }
+              >
+                Supervisors
+              </FilterButton>
+
+              <FilterButton
+                active={
+                  directoryFilter ===
+                  "LOGIN_ENABLED"
+                }
+                onClick={() =>
+                  chooseDirectoryFilter(
+                    "LOGIN_ENABLED"
+                  )
+                }
+              >
+                Login Enabled
               </FilterButton>
 
             </div>
@@ -308,20 +838,20 @@ export default function StaffPage() {
 
         </div>
 
-        {/* STAFF LIST */}
-
         <div className="mt-5">
 
           <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
 
             <div>
+
               <h2 className="text-lg font-black">
-                Staff Directory
+                {directoryTitle}
               </h2>
 
               <p className="text-sm font-semibold text-slate-500">
-                Staff hierarchy, work ownership and performance.
+                Live staff records from your database.
               </p>
+
             </div>
 
             <span className="rounded-full bg-blue-50 px-3 py-1 text-xs font-black text-blue-700">
@@ -333,7 +863,13 @@ export default function StaffPage() {
 
           </div>
 
-          {filteredStaff.length === 0 ? (
+          {loading ? (
+
+            <div className="rounded-2xl border border-slate-200 bg-white p-10 text-center font-bold text-slate-500">
+              Loading staff...
+            </div>
+
+          ) : filteredStaff.length === 0 ? (
 
             <div className="rounded-2xl border border-dashed border-slate-300 bg-white p-10 text-center">
 
@@ -346,7 +882,7 @@ export default function StaffPage() {
               </h3>
 
               <p className="mt-2 text-sm font-semibold text-slate-500">
-                Try another search or add a new staff member.
+                Try another search or choose another filter.
               </p>
 
             </div>
@@ -356,10 +892,16 @@ export default function StaffPage() {
             <div className="space-y-3">
 
               {filteredStaff.map(
-                (member) => (
+                (
+                  member
+                ) => (
                   <StaffCard
-                    key={member.id}
-                    member={member}
+                    key={
+                      member.id
+                    }
+                    member={
+                      member
+                    }
                   />
                 )
               )}
@@ -385,6 +927,20 @@ function StaffCard({
 }: {
   member: StaffMember;
 }) {
+  const teamCount =
+    Number(
+      member._count
+        ?.teamMembers ||
+      0
+    );
+
+  const attendanceCount =
+    Number(
+      member._count
+        ?.attendance ||
+      0
+    );
+
   return (
     <article className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
 
@@ -398,9 +954,23 @@ function StaffCard({
               {member.staffCode}
             </span>
 
-            <StatusBadge
-              status={member.status}
+            <RoleBadge
+              member={
+                member
+              }
             />
+
+            <StatusBadge
+              active={
+                member.isActive
+              }
+            />
+
+            {!member.loginEnabled && (
+              <span className="rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-xs font-black text-amber-700">
+                Login Disabled
+              </span>
+            )}
 
           </div>
 
@@ -422,11 +992,15 @@ function StaffCard({
               </p>
             )}
 
-            {member.supervisorName && (
+            {member.supervisor && (
               <p>
                 👨‍💼 Supervisor:{" "}
                 <span className="font-black text-slate-800">
-                  {member.supervisorName}
+                  {
+                    member
+                      .supervisor
+                      .name
+                  }
                 </span>
               </p>
             )}
@@ -443,22 +1017,24 @@ function StaffCard({
               </p>
             )}
 
+            {member.joiningDate && (
+              <p>
+                📅 Joined:{" "}
+                {formatDate(
+                  member.joiningDate
+                )}
+              </p>
+            )}
+
           </div>
 
         </div>
 
-        <div className="flex flex-wrap gap-2">
-
-          <Link
-            href={`/staff/${member.id}`}
-            className="rounded-lg bg-slate-900 px-3 py-2 text-xs font-black text-white"
-          >
-            View
-          </Link>
+        <div>
 
           <Link
             href={`/staff/edit/${member.id}`}
-            className="rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-xs font-black text-blue-700"
+            className="rounded-xl border border-blue-200 bg-blue-50 px-4 py-2.5 text-xs font-black text-blue-700 transition hover:bg-blue-100"
           >
             Edit
           </Link>
@@ -467,52 +1043,58 @@ function StaffCard({
 
       </div>
 
-      {/* PERFORMANCE */}
-
-      <div className="mt-4 grid grid-cols-2 gap-2 border-t border-slate-100 pt-4 sm:grid-cols-3 lg:grid-cols-5">
+      <div className="mt-4 grid grid-cols-2 gap-2 border-t border-slate-100 pt-4 sm:grid-cols-4">
 
         <MiniStat
-          label="Sub Agents"
-          value={member.subAgentsManaged}
+          label="Team Members"
+          value={
+            teamCount
+          }
         />
 
         <MiniStat
-          label="Policies / Month"
-          value={member.policiesThisMonth}
+          label="Attendance Records"
+          value={
+            attendanceCount
+          }
         />
 
         <MiniStat
-          label="Enquiries"
-          value={member.enquiriesThisMonth}
+          label="Login"
+          value={
+            member.loginEnabled
+              ? "Enabled"
+              : "Disabled"
+          }
         />
 
         <MiniStat
-          label="Renewals"
-          value={member.renewalsHandled}
-        />
-
-        <MiniStat
-          label="Attendance"
-          value={`${member.attendancePercent}%`}
+          label="Status"
+          value={
+            member.isActive
+              ? "Active"
+              : "Inactive"
+          }
         />
 
       </div>
 
-      {/* ACTIVITY RULE */}
+      {!member.isActive &&
+        member.inactiveReason && (
+          <div className="mt-3 rounded-xl border border-red-100 bg-red-50 p-3">
 
-      <div className="mt-3 rounded-xl border border-emerald-100 bg-emerald-50 p-3">
+            <p className="text-xs font-black uppercase tracking-wide text-red-700">
+              Inactive Reason
+            </p>
 
-        <p className="text-xs font-black uppercase tracking-wide text-emerald-700">
-          Monthly Activity
-        </p>
+            <p className="mt-1 text-sm font-semibold text-red-900">
+              {
+                member.inactiveReason
+              }
+            </p>
 
-        <p className="mt-1 text-sm font-semibold text-emerald-900">
-          {member.policiesThisMonth >= 1
-            ? "✅ Active this month — at least one policy completed."
-            : "⚠️ No policy completed this month."}
-        </p>
-
-      </div>
+          </div>
+        )}
 
     </article>
   );
@@ -522,12 +1104,76 @@ function StaffCard({
 /* COMPONENTS                                                                 */
 /* -------------------------------------------------------------------------- */
 
+function ClickableSummaryCard({
+  label,
+  value,
+  emoji,
+  onClick,
+  active,
+  valueClass =
+    "text-slate-950",
+  borderClass =
+    "border-slate-200",
+}: {
+  label: string;
+  value: number;
+  emoji: string;
+  onClick: () => void;
+  active: boolean;
+  valueClass?: string;
+  borderClass?: string;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={
+        onClick
+      }
+      className={`rounded-2xl border bg-white p-4 text-left shadow-sm transition hover:-translate-y-0.5 hover:shadow-md ${borderClass} ${
+        active
+          ? "ring-2 ring-blue-200"
+          : ""
+      }`}
+    >
+
+      <div className="flex items-start justify-between">
+
+        <div>
+
+          <p className="text-xs font-bold text-slate-600">
+            {label}
+          </p>
+
+          <p
+            className={`mt-1 text-3xl font-black ${valueClass}`}
+          >
+            {value}
+          </p>
+
+          <p className="mt-2 text-[10px] font-black uppercase tracking-wide text-blue-600">
+            View Staff →
+          </p>
+
+        </div>
+
+        <div className="text-2xl">
+          {emoji}
+        </div>
+
+      </div>
+
+    </button>
+  );
+}
+
 function SummaryCard({
   label,
   value,
   emoji,
-  valueClass = "text-slate-950",
-  borderClass = "border-slate-200",
+  valueClass =
+    "text-slate-950",
+  borderClass =
+    "border-slate-200",
 }: {
   label: string;
   value: number;
@@ -543,6 +1189,7 @@ function SummaryCard({
       <div className="flex items-start justify-between">
 
         <div>
+
           <p className="text-xs font-bold text-slate-600">
             {label}
           </p>
@@ -552,6 +1199,7 @@ function SummaryCard({
           >
             {value}
           </p>
+
         </div>
 
         <div className="text-2xl">
@@ -569,7 +1217,9 @@ function MiniStat({
   value,
 }: {
   label: string;
-  value: number | string;
+  value:
+    | number
+    | string;
 }) {
   return (
     <div className="rounded-xl bg-slate-50 p-3">
@@ -587,11 +1237,11 @@ function MiniStat({
 }
 
 function StatusBadge({
-  status,
+  active,
 }: {
-  status: StaffStatus;
+  active: boolean;
 }) {
-  if (status === "ACTIVE") {
+  if (active) {
     return (
       <span className="rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-xs font-black text-emerald-700">
         Active
@@ -606,6 +1256,30 @@ function StatusBadge({
   );
 }
 
+function RoleBadge({
+  member,
+}: {
+  member: StaffMember;
+}) {
+  if (
+    isSupervisor(
+      member
+    )
+  ) {
+    return (
+      <span className="rounded-full border border-violet-200 bg-violet-50 px-2.5 py-1 text-xs font-black text-violet-700">
+        Supervisor
+      </span>
+    );
+  }
+
+  return (
+    <span className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs font-black text-slate-600">
+      Staff
+    </span>
+  );
+}
+
 function FilterButton({
   active,
   onClick,
@@ -613,12 +1287,15 @@ function FilterButton({
 }: {
   active: boolean;
   onClick: () => void;
-  children: React.ReactNode;
+  children:
+    React.ReactNode;
 }) {
   return (
     <button
       type="button"
-      onClick={onClick}
+      onClick={
+        onClick
+      }
       className={`rounded-xl px-4 py-2.5 text-sm font-black ${
         active
           ? "bg-blue-700 text-white"
@@ -643,7 +1320,9 @@ function QuickLink({
 }) {
   return (
     <Link
-      href={href}
+      href={
+        href
+      }
       className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm transition hover:border-blue-300 hover:shadow-md"
     >
 
@@ -660,5 +1339,37 @@ function QuickLink({
       </p>
 
     </Link>
+  );
+}
+
+function AttendanceAdminCard({
+  emoji,
+  title,
+  description,
+}: {
+  emoji: string;
+  title: string;
+  description: string;
+}) {
+  return (
+    <div className="rounded-2xl border border-blue-200 bg-white p-4 shadow-sm">
+
+      <div className="text-2xl">
+        {emoji}
+      </div>
+
+      <h3 className="mt-2 font-black text-slate-950">
+        {title}
+      </h3>
+
+      <p className="mt-1 text-sm font-semibold text-slate-500">
+        {description}
+      </p>
+
+      <div className="mt-3 inline-flex rounded-lg bg-slate-100 px-2.5 py-1 text-[10px] font-black uppercase tracking-wide text-slate-500">
+        Setup Next
+      </div>
+
+    </div>
   );
 }

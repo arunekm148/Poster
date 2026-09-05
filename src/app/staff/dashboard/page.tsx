@@ -201,6 +201,13 @@ export default function StaffDashboardPage() {
           <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
 
             <DashboardCard
+              href="/staff/attendance"
+              emoji="🕒"
+              title="Attendance"
+              description="Check in, check out and view attendance."
+            />
+
+            <DashboardCard
               href="/customers"
               emoji="👥"
               title="Customers"
