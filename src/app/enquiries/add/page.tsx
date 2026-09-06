@@ -1,383 +1,85 @@
 "use client";
 
 import {
+  FormEvent,
   Suspense,
   useEffect,
   useMemo,
   useState,
 } from "react";
-
 import {
   useRouter,
   useSearchParams,
 } from "next/navigation";
 
-/* -------------------------------------------------------------------------- */
-/* TYPES                                                                      */
-/* -------------------------------------------------------------------------- */
+type LeadType = "CUSTOMER" | "SUB_AGENT";
 
 type Customer = {
   id: string;
-
-  customerId?: string | null;
-
-  name: string;
-
+  name?: string | null;
   phone?: string | null;
-
-  email?: string | null;
-
   isActive?: boolean;
-
-  sourceType?: string | null;
-
-  subAgentId?: string | null;
-
-  subAgent?: {
-    id?: string;
-    code?: string | null;
-    name?: string | null;
-    phone?: string | null;
-  } | null;
 };
 
 type CustomerApiResponse = {
   success?: boolean;
-
   message?: string;
-
   customers?: Customer[];
-
-  data?: Customer[];
+  data?: Customer[] | Customer;
+  customer?: Customer;
 };
 
-/* -------------------------------------------------------------------------- */
-/* GET LOGGED-IN USER                                                         */
-/* -------------------------------------------------------------------------- */
+type EnquiryApiResponse = {
+  success?: boolean;
+  message?: string;
+  enquiry?: { id?: string };
+  data?: { id?: string };
+};
 
 function getLoggedInUserId() {
-  if (
-    typeof window ===
-    "undefined"
-  ) {
-    return "";
-  }
+  if (typeof window === "undefined") return "";
 
-  /* ------------------------------------------------------------------------ */
-  /* DIRECT USER ID                                                           */
-  /* ------------------------------------------------------------------------ */
+  const direct = localStorage.getItem("userId");
+  if (direct?.trim()) return direct.trim();
 
-  const directUserId =
-    localStorage.getItem(
-      "userId"
-    );
+  for (const key of ["agentUser", "user"]) {
+    const stored = localStorage.getItem(key);
+    if (!stored) continue;
 
-  if (
-    directUserId?.trim()
-  ) {
-    return directUserId.trim();
-  }
-
-  /* ------------------------------------------------------------------------ */
-  /* USER                                                                     */
-  /* ------------------------------------------------------------------------ */
-
-  const storedUser =
-    localStorage.getItem(
-      "user"
-    );
-
-  if (storedUser) {
     try {
-      const parsed =
-        JSON.parse(
-          storedUser
-        );
-
-      const id =
-        String(
-          parsed?.id ||
-            parsed?.userId ||
-            ""
-        ).trim();
+      const parsed = JSON.parse(stored);
+      const id = String(parsed?.id || parsed?.userId || "").trim();
 
       if (id) {
-        localStorage.setItem(
-          "userId",
-          id
-        );
-
+        localStorage.setItem("userId", id);
         return id;
       }
-    } catch (error) {
-      console.error(
-        "Unable to read user:",
-        error
-      );
-    }
-  }
-
-  /* ------------------------------------------------------------------------ */
-  /* AGENT USER                                                               */
-  /* ------------------------------------------------------------------------ */
-
-  const agentUser =
-    localStorage.getItem(
-      "agentUser"
-    );
-
-  if (agentUser) {
-    try {
-      const parsed =
-        JSON.parse(
-          agentUser
-        );
-
-      const id =
-        String(
-          parsed?.id ||
-            parsed?.userId ||
-            ""
-        ).trim();
-
-      if (id) {
-        localStorage.setItem(
-          "userId",
-          id
-        );
-
-        return id;
-      }
-    } catch (error) {
-      console.error(
-        "Unable to read agentUser:",
-        error
-      );
+    } catch {
+      // Ignore invalid local storage.
     }
   }
 
   return "";
 }
 
-/* -------------------------------------------------------------------------- */
-/* TODAY                                                                      */
-/* -------------------------------------------------------------------------- */
-
 function todayForInput() {
-  const now =
-    new Date();
-
-  const year =
-    now.getFullYear();
-
-  const month =
-    String(
-      now.getMonth() + 1
-    ).padStart(
-      2,
-      "0"
-    );
-
-  const day =
-    String(
-      now.getDate()
-    ).padStart(
-      2,
-      "0"
-    );
-
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, "0");
+  const day = String(now.getDate()).padStart(2, "0");
   return `${year}-${month}-${day}`;
 }
 
-/* -------------------------------------------------------------------------- */
-/* CUSTOMER SOURCE                                                            */
-/* -------------------------------------------------------------------------- */
-
-function isSubAgentCustomer(
-  customer: Customer
-) {
-  return (
-    String(
-      customer.sourceType ||
-        ""
-    ).toUpperCase() ===
-      "SUB_AGENT" ||
-    Boolean(
-      customer.subAgentId
-    ) ||
-    Boolean(
-      customer.subAgent?.id
-    )
-  );
+function normalizePhone(value: string) {
+  return value.replace(/\D/g, "").slice(0, 10);
 }
-
-/* -------------------------------------------------------------------------- */
-/* CUSTOMER SOURCE LABEL                                                      */
-/* -------------------------------------------------------------------------- */
-
-function getCustomerSourceLabel(
-  customer: Customer
-) {
-  if (
-    !isSubAgentCustomer(
-      customer
-    )
-  ) {
-    return "Self / Direct";
-  }
-
-  const code =
-    customer.subAgent?.code?.trim() ||
-    "";
-
-  const name =
-    customer.subAgent?.name?.trim() ||
-    "";
-
-  if (
-    code &&
-    name
-  ) {
-    return `Sub-Agent - ${name} (${code})`;
-  }
-
-  if (name) {
-    return `Sub-Agent - ${name}`;
-  }
-
-  if (code) {
-    return `Sub-Agent - ${code}`;
-  }
-
-  return "Sub-Agent Customer";
-}
-
-/* -------------------------------------------------------------------------- */
-/* CUSTOMER OPTION LABEL                                                      */
-/* -------------------------------------------------------------------------- */
-
-function getCustomerOptionLabel(
-  customer: Customer
-) {
-  const parts: string[] =
-    [];
-
-  /* NAME */
-
-  parts.push(
-    customer.name ||
-      "Customer"
-  );
-
-  /* PHONE */
-
-  if (
-    customer.phone
-  ) {
-    parts.push(
-      customer.phone
-    );
-  }
-
-  /* CUSTOMER ID */
-
-  if (
-    customer.customerId
-  ) {
-    parts.push(
-      customer.customerId
-    );
-  }
-
-  /* SUB AGENT */
-
-  if (
-    isSubAgentCustomer(
-      customer
-    )
-  ) {
-    const subAgentName =
-      customer.subAgent?.name ||
-      "";
-
-    const subAgentCode =
-      customer.subAgent?.code ||
-      "";
-
-    if (
-      subAgentName &&
-      subAgentCode
-    ) {
-      parts.push(
-        `Sub-Agent: ${subAgentName} (${subAgentCode})`
-      );
-    } else if (
-      subAgentName
-    ) {
-      parts.push(
-        `Sub-Agent: ${subAgentName}`
-      );
-    } else if (
-      subAgentCode
-    ) {
-      parts.push(
-        `Sub-Agent: ${subAgentCode}`
-      );
-    } else {
-      parts.push(
-        "Sub-Agent"
-      );
-    }
-  } else {
-    parts.push(
-      "Self"
-    );
-  }
-
-  return parts.join(
-    " - "
-  );
-}
-
-/* -------------------------------------------------------------------------- */
-/* PAGE WRAPPER                                                               */
-/* -------------------------------------------------------------------------- */
 
 export default function AddEnquiryPage() {
   return (
     <Suspense
       fallback={
-        <main
-          style={{
-            minHeight:
-              "100vh",
-
-            display:
-              "flex",
-
-            alignItems:
-              "center",
-
-            justifyContent:
-              "center",
-
-            background:
-              "#f5f7fb",
-
-            color:
-              "#374151",
-          }}
-        >
-          <div
-            style={{
-              textAlign:
-                "center",
-
-              fontWeight: 600,
-            }}
-          >
-            Loading enquiry...
-          </div>
+        <main className="flex min-h-screen items-center justify-center bg-slate-50">
+          <p className="font-bold text-slate-500">Loading enquiry...</p>
         </main>
       }
     >
@@ -386,1798 +88,407 @@ export default function AddEnquiryPage() {
   );
 }
 
-/* -------------------------------------------------------------------------- */
-/* CONTENT                                                                    */
-/* -------------------------------------------------------------------------- */
-
 function AddEnquiryContent() {
-  const router =
-    useRouter();
+  const router = useRouter();
+  const searchParams = useSearchParams();
 
-  const searchParams =
-    useSearchParams();
+  const [userId, setUserId] = useState("");
+  const [name, setName] = useState(searchParams.get("name") || "");
+  const [phone, setPhone] = useState(
+    normalizePhone(searchParams.get("phone") || "")
+  );
+  const [businessType, setBusinessType] = useState(
+    searchParams.get("businessType") || ""
+  );
+  const [leadType, setLeadType] = useState<LeadType>(
+    searchParams.get("leadType") === "SUB_AGENT" ? "SUB_AGENT" : "CUSTOMER"
+  );
 
-  /* ------------------------------------------------------------------------ */
-  /* USER                                                                     */
-  /* ------------------------------------------------------------------------ */
-
-  const [
-    userId,
-    setUserId,
-  ] =
-    useState("");
-
-  /* ------------------------------------------------------------------------ */
-  /* CUSTOMERS                                                                */
-  /* ------------------------------------------------------------------------ */
-
-  const [
-    customers,
-    setCustomers,
-  ] =
-    useState<
-      Customer[]
-    >([]);
-
-  const [
-    loadingCustomers,
-    setLoadingCustomers,
-  ] =
-    useState(
-      true
-    );
-
-  const [
-    customerId,
-    setCustomerId,
-  ] =
-    useState("");
-
-  /* ------------------------------------------------------------------------ */
-  /* ENQUIRY                                                                  */
-  /* ------------------------------------------------------------------------ */
-
-  const [
-    businessType,
-    setBusinessType,
-  ] =
-    useState("");
-
-  const [
-    requirement,
-    setRequirement,
-  ] =
-    useState("");
-
-  const [
-    remarks,
-    setRemarks,
-  ] =
-    useState("");
-
-  const [
-    enquiryDate,
-    setEnquiryDate,
-  ] =
-    useState(
-      todayForInput()
-    );
-
-  const [
-    nextFollowUpDate,
-    setNextFollowUpDate,
-  ] =
-    useState("");
-
-  /* ------------------------------------------------------------------------ */
-  /* PAGE STATE                                                               */
-  /* ------------------------------------------------------------------------ */
-
-  const [
-    saving,
-    setSaving,
-  ] =
-    useState(
-      false
-    );
-
-  const [
-    error,
-    setError,
-  ] =
-    useState("");
-
-  const [
-    success,
-    setSuccess,
-  ] =
-    useState("");
-
-  /* ------------------------------------------------------------------------ */
-  /* RETURNED CUSTOMER                                                        */
-  /* ------------------------------------------------------------------------ */
-
-  const returnedCustomerId =
-    searchParams.get(
-      "customerId"
-    ) || "";
-
-  /* ------------------------------------------------------------------------ */
-  /* LOAD USER                                                                */
-  /* ------------------------------------------------------------------------ */
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+  const [success, setSuccess] = useState("");
 
   useEffect(() => {
-    const activeUserId =
-      getLoggedInUserId();
+    const activeUserId = getLoggedInUserId();
 
-    if (
-      !activeUserId
-    ) {
-      setError(
-        "Agent login information not found. Please login again."
-      );
-
-      setLoadingCustomers(
-        false
-      );
-
+    if (!activeUserId) {
+      setError("Agent login information not found. Please login again.");
       return;
     }
 
-    setUserId(
-      activeUserId
-    );
-
-    void loadCustomers(
-      activeUserId
-    );
+    setUserId(activeUserId);
   }, []);
 
-  /* ------------------------------------------------------------------------ */
-  /* RETURNED CUSTOMER AUTO SELECT                                            */
-  /* ------------------------------------------------------------------------ */
+  const canSave = useMemo(
+    () =>
+      Boolean(
+        name.trim() &&
+          /^[6-9]\d{9}$/.test(phone) &&
+          businessType &&
+          !saving
+      ),
+    [name, phone, businessType, saving]
+  );
 
-  useEffect(() => {
-    if (
-      !returnedCustomerId
-    ) {
-      return;
-    }
-
-    if (
-      customers.length ===
-      0
-    ) {
-      return;
-    }
-
-    const found =
-      customers.find(
-        (
-          customer
-        ) =>
-          customer.id ===
-          returnedCustomerId
-      );
-
-    if (found) {
-      setCustomerId(
-        found.id
-      );
-    }
-  }, [
-    returnedCustomerId,
-    customers,
-  ]);
-
-  /* ------------------------------------------------------------------------ */
-  /* LOAD CUSTOMERS                                                           */
-  /* ------------------------------------------------------------------------ */
-
-  async function loadCustomers(
-    activeUserId: string
+  async function findExistingCustomer(
+    activeUserId: string,
+    cleanPhone: string
   ) {
+    const response = await fetch(
+      `/api/customers?userId=${encodeURIComponent(activeUserId)}&limit=500`,
+      {
+        cache: "no-store",
+        credentials: "include",
+      }
+    );
+
+    if (!response.ok) return null;
+
+    let data: CustomerApiResponse | Customer[] = [];
+
     try {
-      setLoadingCustomers(
-        true
-      );
-
-      setError("");
-
-      const response =
-        await fetch(
-          `/api/customers?userId=${encodeURIComponent(
-            activeUserId
-          )}&limit=500`,
-          {
-            cache:
-              "no-store",
-          }
-        );
-
-      let data:
-        | CustomerApiResponse
-        | Customer[] =
-        [];
-
-      try {
-        data =
-          await response.json();
-      } catch {
-        throw new Error(
-          "Unable to read customer API response."
-        );
-      }
-
-      if (
-        !response.ok
-      ) {
-        const message =
-          !Array.isArray(
-            data
-          )
-            ? data.message
-            : "";
-
-        throw new Error(
-          message ||
-            "Unable to load customers."
-        );
-      }
-
-      let list:
-        Customer[] =
-        [];
-
-      if (
-        Array.isArray(
-          data
-        )
-      ) {
-        list =
-          data;
-      } else if (
-        Array.isArray(
-          data.customers
-        )
-      ) {
-        list =
-          data.customers;
-      } else if (
-        Array.isArray(
-          data.data
-        )
-      ) {
-        list =
-          data.data;
-      }
-
-      /* -------------------------------------------------------------------- */
-      /* ACTIVE CUSTOMERS ONLY                                                */
-      /* -------------------------------------------------------------------- */
-
-      const activeCustomers =
-        list.filter(
-          (
-            customer
-          ) =>
-            customer.isActive !==
-            false
-        );
-
-      /* -------------------------------------------------------------------- */
-      /* SORT CUSTOMER NAME                                                   */
-      /* -------------------------------------------------------------------- */
-
-      activeCustomers.sort(
-        (
-          a,
-          b
-        ) =>
-          String(
-            a.name ||
-              ""
-          ).localeCompare(
-            String(
-              b.name ||
-                ""
-            ),
-            "en",
-            {
-              sensitivity:
-                "base",
-            }
-          )
-      );
-
-      setCustomers(
-        activeCustomers
-      );
-    } catch (
-      err
-    ) {
-      console.error(
-        "LOAD CUSTOMERS ERROR:",
-        err
-      );
-
-      setCustomers(
-        []
-      );
-
-      setError(
-        err instanceof
-          Error
-          ? err.message
-          : "Unable to load customers."
-      );
-    } finally {
-      setLoadingCustomers(
-        false
-      );
+      data = await response.json();
+    } catch {
+      return null;
     }
-  }
 
-  /* ------------------------------------------------------------------------ */
-  /* COUNTS                                                                   */
-  /* ------------------------------------------------------------------------ */
+    const list = Array.isArray(data)
+      ? data
+      : Array.isArray(data.customers)
+        ? data.customers
+        : Array.isArray(data.data)
+          ? data.data
+          : [];
 
-  const selfCustomerCount =
-    useMemo(() => {
-      return customers.filter(
-        (
-          customer
-        ) =>
-          !isSubAgentCustomer(
-            customer
-          )
-      ).length;
-    }, [
-      customers,
-    ]);
-
-  const subAgentCustomerCount =
-    useMemo(() => {
-      return customers.filter(
-        (
-          customer
-        ) =>
-          isSubAgentCustomer(
-            customer
-          )
-      ).length;
-    }, [
-      customers,
-    ]);
-
-  /* ------------------------------------------------------------------------ */
-  /* SELECTED CUSTOMER                                                        */
-  /* ------------------------------------------------------------------------ */
-
-  const selectedCustomer =
-    useMemo(() => {
-      return (
-        customers.find(
-          (
-            customer
-          ) =>
-            customer.id ===
-            customerId
-        ) ||
-        null
-      );
-    }, [
-      customers,
-      customerId,
-    ]);
-
-  /* ------------------------------------------------------------------------ */
-  /* REGISTER NEW CUSTOMER                                                    */
-  /* ------------------------------------------------------------------------ */
-
-  function registerNewCustomer() {
-    const returnTo =
-      encodeURIComponent(
-        "/enquiries/add"
-      );
-
-    router.push(
-      `/customers/add?returnTo=${returnTo}`
+    return (
+      list.find(
+        (customer) =>
+          normalizePhone(String(customer.phone || "")) === cleanPhone &&
+          customer.isActive !== false
+      ) || null
     );
   }
 
-  /* ------------------------------------------------------------------------ */
-  /* SAVE ENQUIRY                                                             */
-  /* ------------------------------------------------------------------------ */
-
-  async function saveEnquiry(
-    event:
-      React.FormEvent<HTMLFormElement>
+  async function createLightCustomer(
+    activeUserId: string,
+    cleanName: string,
+    cleanPhone: string
   ) {
-    event.preventDefault();
+    const response = await fetch("/api/customers", {
+      method: "POST",
+      credentials: "include",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        userId: activeUserId,
+        name: cleanName,
+        phone: cleanPhone,
+        sourceType: "SELF",
+        isActive: true,
+      }),
+    });
+
+    let data: CustomerApiResponse = {};
 
     try {
-      setSaving(
-        true
-      );
+      data = await response.json();
+    } catch {
+      data = {};
+    }
 
-      setError(
-        ""
-      );
+    if (!response.ok || data.success === false) {
+      throw new Error(data.message || "Unable to prepare enquiry contact.");
+    }
 
-      setSuccess(
-        ""
-      );
+    const directData =
+      data.data && !Array.isArray(data.data)
+        ? data.data
+        : undefined;
 
-      const activeUserId =
-        userId ||
-        getLoggedInUserId();
+    const customerId =
+      data.customer?.id ||
+      directData?.id;
 
-      if (
-        !activeUserId
-      ) {
+    if (!customerId) {
+      throw new Error("Customer ID was not returned by the server.");
+    }
+
+    return customerId;
+  }
+
+  async function saveEnquiry(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+
+    if (saving) return;
+
+    try {
+      setSaving(true);
+      setError("");
+      setSuccess("");
+
+      const activeUserId = userId || getLoggedInUserId();
+
+      if (!activeUserId) {
         throw new Error(
           "Agent login information not found. Please login again."
         );
       }
 
-      if (
-        !customerId
-      ) {
-        throw new Error(
-          "Please select a customer."
-        );
+      const cleanName = name.trim();
+      const cleanPhone = normalizePhone(phone);
+
+      if (!cleanName) {
+        throw new Error("Please enter name.");
       }
 
-      const customer =
-        customers.find(
-          (
-            item
-          ) =>
-            item.id ===
-            customerId
-        );
-
-      if (
-        !customer
-      ) {
-        throw new Error(
-          "Selected customer was not found."
-        );
+      if (!/^[6-9]\d{9}$/.test(cleanPhone)) {
+        throw new Error("Please enter a valid 10 digit mobile number.");
       }
 
-      if (
-        customer.isActive ===
-        false
-      ) {
-        throw new Error(
-          "Inactive customer cannot be used for a new enquiry."
-        );
+      if (!businessType) {
+        throw new Error("Please select business type.");
       }
 
-      if (
-        !businessType
-      ) {
-        throw new Error(
-          "Please select business type."
-        );
-      }
-
-      if (
-        !enquiryDate
-      ) {
-        throw new Error(
-          "Please select enquiry date."
-        );
-      }
-
-      /* -------------------------------------------------------------------- */
-      /* PAYLOAD                                                              */
-      /* -------------------------------------------------------------------- */
-
-      const payload = {
-        userId:
-          activeUserId,
-
-        customerId,
-
-        businessType,
-
-        requirement:
-          requirement.trim() ||
-          null,
-
-        remarks:
-          remarks.trim() ||
-          null,
-
-        enquiryDate,
-
-        nextFollowUpDate:
-          nextFollowUpDate ||
-          null,
-      };
-
-      console.log(
-        "CREATE ENQUIRY:",
-        payload
+      const existingCustomer = await findExistingCustomer(
+        activeUserId,
+        cleanPhone
       );
 
-      const response =
-        await fetch(
-          "/api/enquiries",
-          {
-            method:
-              "POST",
+      const customerId =
+        existingCustomer?.id ||
+        (await createLightCustomer(
+          activeUserId,
+          cleanName,
+          cleanPhone
+        ));
 
-            headers: {
-              "Content-Type":
-                "application/json",
-            },
+      const marker =
+        leadType === "SUB_AGENT"
+          ? "[LEAD_TYPE:SUB_AGENT]"
+          : "[LEAD_TYPE:CUSTOMER]";
 
-            body:
-              JSON.stringify(
-                payload
-              ),
-          }
-        );
+      const response = await fetch("/api/enquiries", {
+        method: "POST",
+        credentials: "include",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          userId: activeUserId,
+          customerId,
+          businessType,
+          requirement:
+            leadType === "SUB_AGENT"
+              ? "Sub-Agent Lead"
+              : null,
+          remarks: marker,
+          enquiryDate: todayForInput(),
+          nextFollowUpDate: null,
+        }),
+      });
 
-      let data:
-        any = {};
+      let data: EnquiryApiResponse = {};
 
       try {
-        data =
-          await response.json();
+        data = await response.json();
       } catch {
         data = {};
       }
 
-      console.log(
-        "CREATE ENQUIRY RESPONSE:",
-        data
-      );
-
-      if (
-        !response.ok ||
-        data.success ===
-          false
-      ) {
-        throw new Error(
-          data.message ||
-            "Unable to create enquiry."
-        );
+      if (!response.ok || data.success === false) {
+        throw new Error(data.message || "Unable to create enquiry.");
       }
 
-      setSuccess(
-        data.message ||
-          "Enquiry created successfully."
-      );
+      setSuccess("Enquiry saved successfully.");
 
-      const newEnquiryId =
+      const enquiryId =
         data.enquiry?.id ||
         data.data?.id ||
         "";
 
-      window.setTimeout(
-        () => {
-          if (
-            newEnquiryId
-          ) {
-            router.push(
-              `/enquiries/${newEnquiryId}`
-            );
+      window.setTimeout(() => {
+        if (enquiryId) {
+          router.push(`/enquiries/${enquiryId}`);
+          return;
+        }
 
-            return;
-          }
-
-          router.push(
-            "/enquiries"
-          );
-        },
-        700
-      );
-    } catch (
-      err
-    ) {
-      console.error(
-        "SAVE ENQUIRY ERROR:",
-        err
-      );
+        router.push("/enquiries");
+      }, 500);
+    } catch (err) {
+      console.error("SAVE ENQUIRY ERROR:", err);
 
       setError(
-        err instanceof
-          Error
+        err instanceof Error
           ? err.message
           : "Unable to create enquiry."
       );
     } finally {
-      setSaving(
-        false
-      );
+      setSaving(false);
     }
   }
 
-  /* ------------------------------------------------------------------------ */
-  /* PAGE                                                                     */
-  /* ------------------------------------------------------------------------ */
-
   return (
-    <main
-      style={{
-        minHeight:
-          "100vh",
-
-        background:
-          "#f5f7fb",
-
-        padding:
-          "30px 18px 70px",
-
-        color:
-          "#111827",
-      }}
-    >
-      <div
-        style={{
-          maxWidth:
-            "900px",
-
-          margin:
-            "0 auto",
-        }}
-      >
-
-        {/* ------------------------------------------------------------------ */}
-        {/* BACK                                                               */}
-        {/* ------------------------------------------------------------------ */}
-
+    <main className="min-h-screen bg-slate-50 p-4 pb-24 text-slate-950">
+      <div className="mx-auto max-w-xl">
         <button
           type="button"
-          onClick={() =>
-            router.push(
-              "/enquiries"
-            )
-          }
-          style={{
-            border:
-              "1px solid #d1d5db",
-
-            background:
-              "#ffffff",
-
-            color:
-              "#111827",
-
-            borderRadius:
-              "10px",
-
-            padding:
-              "11px 18px",
-
-            cursor:
-              "pointer",
-
-            marginBottom:
-              "22px",
-
-            fontWeight:
-              700,
-
-            fontSize:
-              "14px",
-          }}
+          onClick={() => router.push("/enquiries")}
+          className="mb-4 rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-black text-slate-700"
         >
           ← Back to Enquiries
         </button>
 
-        {/* ------------------------------------------------------------------ */}
-        {/* MAIN CARD                                                          */}
-        {/* ------------------------------------------------------------------ */}
+        <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm sm:p-7">
+          <p className="text-xs font-black uppercase tracking-wider text-blue-700">
+            Quick Lead Entry
+          </p>
 
-        <div
-          style={{
-            background:
-              "#ffffff",
+          <h1 className="mt-1 text-2xl font-black">
+            New Enquiry
+          </h1>
 
-            borderRadius:
-              "20px",
-
-            padding:
-              "30px",
-
-            boxShadow:
-              "0 6px 25px rgba(0,0,0,0.08)",
-
-            border:
-              "1px solid #e5e7eb",
-          }}
-        >
-
-          {/* ---------------------------------------------------------------- */}
-          {/* HEADER                                                           */}
-          {/* ---------------------------------------------------------------- */}
-
-          <div
-            style={{
-              marginBottom:
-                "28px",
-            }}
-          >
-            <div
-              style={{
-                color:
-                  "#1d4ed8",
-
-                fontSize:
-                  "12px",
-
-                fontWeight:
-                  900,
-
-                letterSpacing:
-                  "1px",
-
-                textTransform:
-                  "uppercase",
-
-                marginBottom:
-                  "7px",
-              }}
-            >
-              Sales Management
-            </div>
-
-            <h1
-              style={{
-                margin: 0,
-
-                fontSize:
-                  "30px",
-
-                color:
-                  "#111827",
-
-                fontWeight:
-                  800,
-              }}
-            >
-              New Enquiry
-            </h1>
-
-            <p
-              style={{
-                margin:
-                  "8px 0 0",
-
-                color:
-                  "#6b7280",
-
-                fontSize:
-                  "15px",
-              }}
-            >
-              Select an existing customer and create a new enquiry.
-            </p>
-          </div>
-
-          {/* ---------------------------------------------------------------- */}
-          {/* ERROR                                                            */}
-          {/* ---------------------------------------------------------------- */}
+          <p className="mt-2 text-sm font-semibold text-slate-500">
+            Enter only the basic lead information. More details can be added later.
+          </p>
 
           {error && (
-            <div
-              style={{
-                background:
-                  "#fef2f2",
-
-                color:
-                  "#b91c1c",
-
-                border:
-                  "1px solid #fecaca",
-
-                padding:
-                  "13px 15px",
-
-                borderRadius:
-                  "10px",
-
-                marginBottom:
-                  "20px",
-
-                fontSize:
-                  "14px",
-
-                fontWeight:
-                  600,
-              }}
-            >
+            <div className="mt-5 rounded-xl border border-red-200 bg-red-50 p-4 text-sm font-bold text-red-700">
               ⚠️ {error}
             </div>
           )}
 
-          {/* ---------------------------------------------------------------- */}
-          {/* SUCCESS                                                          */}
-          {/* ---------------------------------------------------------------- */}
-
           {success && (
-            <div
-              style={{
-                background:
-                  "#f0fdf4",
-
-                color:
-                  "#166534",
-
-                border:
-                  "1px solid #bbf7d0",
-
-                padding:
-                  "13px 15px",
-
-                borderRadius:
-                  "10px",
-
-                marginBottom:
-                  "20px",
-
-                fontSize:
-                  "14px",
-
-                fontWeight:
-                  700,
-              }}
-            >
+            <div className="mt-5 rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-sm font-bold text-emerald-700">
               ✅ {success}
             </div>
           )}
 
-          <form
-            onSubmit={
-              saveEnquiry
-            }
-          >
+          <form onSubmit={saveEnquiry} className="mt-6 space-y-5">
+            <Field label="Name *">
+              <input
+                value={name}
+                onChange={(event) => setName(event.target.value)}
+                placeholder="Customer / lead name"
+                className={inputClass}
+              />
+            </Field>
 
-            {/* ============================================================= */}
-            {/* CUSTOMER                                                      */}
-            {/* ============================================================= */}
-
-            <section>
-
-              <div
-                style={{
-                  display:
-                    "flex",
-
-                  justifyContent:
-                    "space-between",
-
-                  alignItems:
-                    "flex-end",
-
-                  gap:
-                    "15px",
-
-                  flexWrap:
-                    "wrap",
-
-                  marginBottom:
-                    "18px",
-                }}
-              >
-                <div>
-                  <h2
-                    style={{
-                      fontSize:
-                        "21px",
-
-                      margin: 0,
-
-                      color:
-                        "#111827",
-                    }}
-                  >
-                    Customer
-                  </h2>
-
-                  {!loadingCustomers && (
-                    <p
-                      style={{
-                        margin:
-                          "6px 0 0",
-
-                        color:
-                          "#6b7280",
-
-                        fontSize:
-                          "13px",
-
-                        fontWeight:
-                          600,
-                      }}
-                    >
-                      {customers.length} active customers
-                      {" • "}
-                      {selfCustomerCount} self
-                      {" • "}
-                      {subAgentCustomerCount} sub-agent
-                    </p>
-                  )}
-                </div>
-
-                <button
-                  type="button"
-                  onClick={
-                    registerNewCustomer
-                  }
-                  style={{
-                    border:
-                      "1px solid #2563eb",
-
-                    background:
-                      "#eff6ff",
-
-                    color:
-                      "#1d4ed8",
-
-                    borderRadius:
-                      "10px",
-
-                    padding:
-                      "10px 15px",
-
-                    cursor:
-                      "pointer",
-
-                    fontWeight:
-                      800,
-
-                    fontSize:
-                      "13px",
-                  }}
-                >
-                  + Register New Customer
-                </button>
-              </div>
-
-              {/* ----------------------------------------------------------- */}
-              {/* ORIGINAL DROPDOWN                                            */}
-              {/* ----------------------------------------------------------- */}
-
-              <label
-                style={
-                  labelStyle
+            <Field label="Mobile Number *">
+              <input
+                inputMode="numeric"
+                maxLength={10}
+                value={phone}
+                onChange={(event) =>
+                  setPhone(normalizePhone(event.target.value))
                 }
+                placeholder="10 digit mobile number"
+                className={inputClass}
+              />
+            </Field>
+
+            <Field label="Business Type *">
+              <select
+                value={businessType}
+                onChange={(event) => setBusinessType(event.target.value)}
+                className={inputClass}
               >
-                Select Existing Customer *
+                <option value="">Select Business Type</option>
+                <option value="HEALTH">Health Insurance</option>
+                <option value="MOTOR">Motor Insurance</option>
+                <option value="LIFE">Life Insurance</option>
+                <option value="GENERAL">General Insurance</option>
+                <option value="INVESTMENT">Investment</option>
+                <option value="LOAN">Loan</option>
+                <option value="OTHER">Other</option>
+              </select>
+            </Field>
+
+            <div>
+              <label className="mb-2 block text-sm font-black text-slate-800">
+                Lead Type *
               </label>
 
-              <select
-                value={
-                  customerId
-                }
-                onChange={(
-                  event
-                ) =>
-                  setCustomerId(
-                    event.target.value
-                  )
-                }
-                required
-                disabled={
-                  loadingCustomers
-                }
-                style={{
-                  ...inputStyle,
-
-                  minHeight:
-                    "48px",
-
-                  fontWeight:
-                    600,
-                }}
-              >
-                <option value="">
-                  {loadingCustomers
-                    ? "Loading customers..."
-                    : "Select customer"}
-                </option>
-
-                {customers.map(
-                  (
-                    customer
-                  ) => (
-                    <option
-                      key={
-                        customer.id
-                      }
-                      value={
-                        customer.id
-                      }
-                    >
-                      {getCustomerOptionLabel(
-                        customer
-                      )}
-                    </option>
-                  )
-                )}
-              </select>
-
-              {/* ----------------------------------------------------------- */}
-              {/* NO CUSTOMERS                                                 */}
-              {/* ----------------------------------------------------------- */}
-
-              {!loadingCustomers &&
-                customers.length ===
-                  0 && (
-                  <div
-                    style={{
-                      marginTop:
-                        "12px",
-
-                      background:
-                        "#fffbeb",
-
-                      border:
-                        "1px solid #fde68a",
-
-                      color:
-                        "#92400e",
-
-                      padding:
-                        "12px",
-
-                      borderRadius:
-                        "9px",
-
-                      fontSize:
-                        "14px",
-                    }}
-                  >
-                    No active customers found. Click{" "}
-                    <strong>
-                      Register New Customer
-                    </strong>{" "}
-                    above.
-                  </div>
-                )}
-
-              {/* ----------------------------------------------------------- */}
-              {/* SELECTED CUSTOMER                                            */}
-              {/* ----------------------------------------------------------- */}
-
-              {selectedCustomer && (
-                <div
-                  style={{
-                    marginTop:
-                      "15px",
-
-                    background:
-                      "#f8fafc",
-
-                    border:
-                      "1px solid #cbd5e1",
-
-                    borderRadius:
-                      "12px",
-
-                    padding:
-                      "16px",
-                  }}
-                >
-
-                  <div
-                    style={{
-                      display:
-                        "flex",
-
-                      alignItems:
-                        "flex-start",
-
-                      justifyContent:
-                        "space-between",
-
-                      gap:
-                        "15px",
-
-                      flexWrap:
-                        "wrap",
-                    }}
-                  >
-                    <div>
-
-                      {/* NAME */}
-
-                      <div
-                        style={{
-                          color:
-                            "#111827",
-
-                          fontSize:
-                            "18px",
-
-                          fontWeight:
-                            800,
-                        }}
-                      >
-                        {
-                          selectedCustomer.name
-                        }
-                      </div>
-
-                      {/* CUSTOMER ID */}
-
-                      {selectedCustomer.customerId && (
-                        <div
-                          style={{
-                            marginTop:
-                              "5px",
-
-                            color:
-                              "#1d4ed8",
-
-                            fontSize:
-                              "13px",
-
-                            fontWeight:
-                              700,
-                          }}
-                        >
-                          Customer ID:{" "}
-                          {
-                            selectedCustomer.customerId
-                          }
-                        </div>
-                      )}
-
-                      {/* MOBILE */}
-
-                      {selectedCustomer.phone && (
-                        <div
-                          style={{
-                            marginTop:
-                              "8px",
-
-                            color:
-                              "#374151",
-
-                            fontSize:
-                              "14px",
-
-                            fontWeight:
-                              600,
-                          }}
-                        >
-                          📱{" "}
-                          {
-                            selectedCustomer.phone
-                          }
-                        </div>
-                      )}
-
-                      {/* EMAIL */}
-
-                      {selectedCustomer.email && (
-                        <div
-                          style={{
-                            marginTop:
-                              "5px",
-
-                            color:
-                              "#4b5563",
-
-                            fontSize:
-                              "14px",
-                          }}
-                        >
-                          ✉️{" "}
-                          {
-                            selectedCustomer.email
-                          }
-                        </div>
-                      )}
-
-                    </div>
-
-                    {/* SOURCE */}
-
-                    <div
-                      style={{
-                        display:
-                          "inline-flex",
-
-                        borderRadius:
-                          "999px",
-
-                        padding:
-                          "7px 12px",
-
-                        fontSize:
-                          "12px",
-
-                        fontWeight:
-                          800,
-
-                        background:
-                          isSubAgentCustomer(
-                            selectedCustomer
-                          )
-                            ? "#ede9fe"
-                            : "#dbeafe",
-
-                        color:
-                          isSubAgentCustomer(
-                            selectedCustomer
-                          )
-                            ? "#6d28d9"
-                            : "#1d4ed8",
-
-                        border:
-                          isSubAgentCustomer(
-                            selectedCustomer
-                          )
-                            ? "1px solid #ddd6fe"
-                            : "1px solid #bfdbfe",
-                      }}
-                    >
-                      {isSubAgentCustomer(
-                        selectedCustomer
-                      )
-                        ? "🤝 "
-                        : "👤 "}
-
-                      {getCustomerSourceLabel(
-                        selectedCustomer
-                      )}
-                    </div>
-
-                  </div>
-
-                  {/* SUB AGENT DETAILS */}
-
-                  {isSubAgentCustomer(
-                    selectedCustomer
-                  ) && (
-                    <div
-                      style={{
-                        marginTop:
-                          "14px",
-
-                        background:
-                          "#faf5ff",
-
-                        border:
-                          "1px solid #e9d5ff",
-
-                        borderRadius:
-                          "10px",
-
-                        padding:
-                          "12px",
-                      }}
-                    >
-                      <div
-                        style={{
-                          color:
-                            "#7e22ce",
-
-                          fontSize:
-                            "11px",
-
-                          fontWeight:
-                            900,
-
-                          textTransform:
-                            "uppercase",
-
-                          letterSpacing:
-                            "0.5px",
-                        }}
-                      >
-                        Customer Source
-                      </div>
-
-                      <div
-                        style={{
-                          marginTop:
-                            "4px",
-
-                          color:
-                            "#581c87",
-
-                          fontWeight:
-                            800,
-
-                          fontSize:
-                            "14px",
-                        }}
-                      >
-                        🤝{" "}
-                        {getCustomerSourceLabel(
-                          selectedCustomer
-                        )}
-                      </div>
-
-                      {selectedCustomer
-                        .subAgent
-                        ?.phone && (
-                        <div
-                          style={{
-                            marginTop:
-                              "5px",
-
-                            color:
-                              "#6b21a8",
-
-                            fontSize:
-                              "13px",
-                          }}
-                        >
-                          Sub-Agent Mobile:{" "}
-                          {
-                            selectedCustomer
-                              .subAgent
-                              .phone
-                          }
-                        </div>
-                      )}
-                    </div>
-                  )}
-
-                </div>
+              <div className="grid grid-cols-2 gap-3">
+                <LeadTypeButton
+                  active={leadType === "CUSTOMER"}
+                  title="Customer"
+                  icon="👤"
+                  onClick={() => setLeadType("CUSTOMER")}
+                />
+
+                <LeadTypeButton
+                  active={leadType === "SUB_AGENT"}
+                  title="Sub Agent"
+                  icon="🤝"
+                  onClick={() => setLeadType("SUB_AGENT")}
+                />
+              </div>
+
+              {leadType === "SUB_AGENT" && (
+                <p className="mt-2 rounded-xl bg-violet-50 p-3 text-xs font-semibold text-violet-700">
+                  This lead can later be converted to a Sub Agent from the enquiry page.
+                </p>
               )}
-
-            </section>
-
-            <hr
-              style={{
-                border: 0,
-
-                borderTop:
-                  "1px solid #e5e7eb",
-
-                margin:
-                  "30px 0",
-              }}
-            />
-
-            {/* ============================================================= */}
-            {/* ENQUIRY INFORMATION                                            */}
-            {/* ============================================================= */}
-
-            <section>
-
-              <h2
-                style={{
-                  fontSize:
-                    "20px",
-
-                  margin:
-                    "0 0 18px",
-
-                  color:
-                    "#111827",
-                }}
-              >
-                Enquiry Information
-              </h2>
-
-              <div
-                style={{
-                  display:
-                    "grid",
-
-                  gridTemplateColumns:
-                    "repeat(auto-fit, minmax(220px, 1fr))",
-
-                  gap:
-                    "18px",
-                }}
-              >
-
-                {/* BUSINESS TYPE */}
-
-                <div>
-
-                  <label
-                    style={
-                      labelStyle
-                    }
-                  >
-                    Business Type *
-                  </label>
-
-                  <select
-                    value={
-                      businessType
-                    }
-                    onChange={(
-                      event
-                    ) =>
-                      setBusinessType(
-                        event.target.value
-                      )
-                    }
-                    required
-                    style={
-                      inputStyle
-                    }
-                  >
-                    <option value="">
-                      Select Business Type
-                    </option>
-
-                    <option value="HEALTH">
-                      Health
-                    </option>
-
-                    <option value="MOTOR">
-                      Motor
-                    </option>
-
-                    <option value="LIFE">
-                      Life
-                    </option>
-
-                    <option value="OTHER">
-                      Other
-                    </option>
-                  </select>
-
-                </div>
-
-                {/* ENQUIRY DATE */}
-
-                <div>
-
-                  <label
-                    style={
-                      labelStyle
-                    }
-                  >
-                    Enquiry Date *
-                  </label>
-
-                  <input
-                    type="date"
-                    value={
-                      enquiryDate
-                    }
-                    onChange={(
-                      event
-                    ) =>
-                      setEnquiryDate(
-                        event.target.value
-                      )
-                    }
-                    required
-                    style={
-                      inputStyle
-                    }
-                  />
-
-                </div>
-
-                {/* NEXT FOLLOW UP */}
-
-                <div>
-
-                  <label
-                    style={
-                      labelStyle
-                    }
-                  >
-                    Next Follow-up Date
-                  </label>
-
-                  <input
-                    type="date"
-                    value={
-                      nextFollowUpDate
-                    }
-                    onChange={(
-                      event
-                    ) =>
-                      setNextFollowUpDate(
-                        event.target.value
-                      )
-                    }
-                    min={
-                      enquiryDate ||
-                      undefined
-                    }
-                    style={
-                      inputStyle
-                    }
-                  />
-
-                </div>
-
-              </div>
-
-              {/* REQUIREMENT */}
-
-              <div
-                style={{
-                  marginTop:
-                    "18px",
-                }}
-              >
-
-                <label
-                  style={
-                    labelStyle
-                  }
-                >
-                  Requirement
-                </label>
-
-                <textarea
-                  value={
-                    requirement
-                  }
-                  onChange={(
-                    event
-                  ) =>
-                    setRequirement(
-                      event.target.value
-                    )
-                  }
-                  placeholder="Enter customer requirement"
-                  rows={4}
-                  style={{
-                    ...inputStyle,
-
-                    minHeight:
-                      "100px",
-
-                    resize:
-                      "vertical",
-
-                    fontFamily:
-                      "inherit",
-                  }}
-                />
-
-              </div>
-
-              {/* REMARKS */}
-
-              <div
-                style={{
-                  marginTop:
-                    "18px",
-                }}
-              >
-
-                <label
-                  style={
-                    labelStyle
-                  }
-                >
-                  Remarks
-                </label>
-
-                <textarea
-                  value={
-                    remarks
-                  }
-                  onChange={(
-                    event
-                  ) =>
-                    setRemarks(
-                      event.target.value
-                    )
-                  }
-                  placeholder="Enter remarks / notes"
-                  rows={4}
-                  style={{
-                    ...inputStyle,
-
-                    minHeight:
-                      "100px",
-
-                    resize:
-                      "vertical",
-
-                    fontFamily:
-                      "inherit",
-                  }}
-                />
-
-              </div>
-
-            </section>
-
-            {/* ============================================================= */}
-            {/* BUTTONS                                                        */}
-            {/* ============================================================= */}
-
-            <div
-              style={{
-                display:
-                  "flex",
-
-                justifyContent:
-                  "flex-end",
-
-                gap:
-                  "12px",
-
-                flexWrap:
-                  "wrap",
-
-                marginTop:
-                  "30px",
-
-                paddingTop:
-                  "22px",
-
-                borderTop:
-                  "1px solid #e5e7eb",
-              }}
-            >
-
-              <button
-                type="button"
-                disabled={
-                  saving
-                }
-                onClick={() =>
-                  router.push(
-                    "/enquiries"
-                  )
-                }
-                style={{
-                  border:
-                    "1px solid #d1d5db",
-
-                  background:
-                    "#ffffff",
-
-                  color:
-                    "#111827",
-
-                  borderRadius:
-                    "10px",
-
-                  padding:
-                    "11px 18px",
-
-                  cursor:
-                    saving
-                      ? "not-allowed"
-                      : "pointer",
-
-                  fontWeight:
-                    700,
-
-                  opacity:
-                    saving
-                      ? 0.6
-                      : 1,
-                }}
-              >
-                Cancel
-              </button>
-
-              <button
-                type="submit"
-                disabled={
-                  saving ||
-                  loadingCustomers
-                }
-                style={{
-                  border: 0,
-
-                  background:
-                    saving ||
-                    loadingCustomers
-                      ? "#93c5fd"
-                      : "#2563eb",
-
-                  color:
-                    "#ffffff",
-
-                  borderRadius:
-                    "10px",
-
-                  padding:
-                    "11px 22px",
-
-                  cursor:
-                    saving ||
-                    loadingCustomers
-                      ? "not-allowed"
-                      : "pointer",
-
-                  fontWeight:
-                    800,
-
-                  fontSize:
-                    "14px",
-                }}
-              >
-                {saving
-                  ? "Saving..."
-                  : "Save Enquiry"}
-              </button>
-
             </div>
 
+            <button
+              type="submit"
+              disabled={!canSave}
+              className="w-full rounded-xl bg-blue-700 px-5 py-3.5 font-black text-white shadow-sm disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {saving ? "Saving..." : "Save Enquiry"}
+            </button>
           </form>
-
         </div>
-
       </div>
     </main>
   );
 }
 
-/* -------------------------------------------------------------------------- */
-/* LABEL STYLE                                                                */
-/* -------------------------------------------------------------------------- */
+const inputClass =
+  "w-full rounded-xl border border-slate-300 bg-white px-4 py-3 font-semibold text-slate-950 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100";
 
-const labelStyle:
-  React.CSSProperties = {
-    display:
-      "block",
+function Field({
+  label,
+  children,
+}: {
+  label: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div>
+      <label className="mb-2 block text-sm font-black text-slate-800">
+        {label}
+      </label>
+      {children}
+    </div>
+  );
+}
 
-    fontSize:
-      "13px",
-
-    fontWeight:
-      700,
-
-    color:
-      "#374151",
-
-    marginBottom:
-      "7px",
-  };
-
-/* -------------------------------------------------------------------------- */
-/* INPUT STYLE                                                                */
-/* -------------------------------------------------------------------------- */
-
-const inputStyle:
-  React.CSSProperties = {
-    width:
-      "100%",
-
-    boxSizing:
-      "border-box",
-
-    border:
-      "1px solid #cbd5e1",
-
-    borderRadius:
-      "9px",
-
-    padding:
-      "12px 13px",
-
-    background:
-      "#ffffff",
-
-    color:
-      "#111827",
-
-    WebkitTextFillColor:
-      "#111827",
-
-    opacity:
-      1,
-
-    fontSize:
-      "14px",
-
-    fontWeight:
-      500,
-
-    outline:
-      "none",
-
-    colorScheme:
-      "light",
-  };
+function LeadTypeButton({
+  active,
+  title,
+  icon,
+  onClick,
+}: {
+  active: boolean;
+  title: string;
+  icon: string;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`rounded-2xl border p-4 text-left transition ${
+        active
+          ? "border-blue-500 bg-blue-50 ring-2 ring-blue-100"
+          : "border-slate-200 bg-white hover:border-blue-300"
+      }`}
+    >
+      <div className="text-2xl">{icon}</div>
+      <p className="mt-2 font-black">{title}</p>
+    </button>
+  );
+}

@@ -2,12 +2,14 @@
 
 import {
   FormEvent,
+  Suspense,
   useEffect,
   useState,
 } from "react";
 
 import {
   useRouter,
+  useSearchParams,
 } from "next/navigation";
 
 /* -------------------------------------------------------------------------- */
@@ -16,18 +18,25 @@ import {
 
 type ExistingSubAgent = {
   id: string;
+
   userId?: string;
 
   code: string;
+
   name: string;
 
   phone?: string | null;
+
   whatsapp?: string | null;
+
   email?: string | null;
 
   address?: string | null;
+
   district?: string | null;
+
   state?: string | null;
+
   pincode?: string | null;
 
   notes?: string | null;
@@ -61,83 +70,175 @@ const KERALA_DISTRICTS = [
 ];
 
 /* -------------------------------------------------------------------------- */
-/* PAGE                                                                       */
+/* PAGE WRAPPER                                                               */
 /* -------------------------------------------------------------------------- */
 
 export default function AddSubAgentPage() {
+  return (
+    <Suspense
+      fallback={
+        <main className="flex min-h-screen items-center justify-center bg-slate-50">
+          <p className="font-bold text-slate-600">
+            Loading Sub-Agent...
+          </p>
+        </main>
+      }
+    >
+      <AddSubAgentContent />
+    </Suspense>
+  );
+}
+
+/* -------------------------------------------------------------------------- */
+/* CONTENT                                                                    */
+/* -------------------------------------------------------------------------- */
+
+function AddSubAgentContent() {
   const router =
     useRouter();
+
+  const searchParams =
+    useSearchParams();
+
+  /* ------------------------------------------------------------------------ */
+  /* WORKFLOW PARAMETERS                                                      */
+  /* ------------------------------------------------------------------------ */
+
+  const enquiryId =
+    searchParams.get(
+      "enquiryId"
+    ) || "";
+
+  const prefillName =
+    searchParams.get(
+      "name"
+    ) || "";
+
+  const prefillPhone =
+    String(
+      searchParams.get(
+        "phone"
+      ) || ""
+    )
+      .replace(
+        /\D/g,
+        ""
+      )
+      .slice(
+        -10
+      );
+
+  /*
+   * If enquiryId exists, this page
+   * has been opened from the enquiry /
+   * follow-up workflow.
+   */
+
+  const fromEnquiryWorkflow =
+    Boolean(
+      enquiryId
+    );
+
+  const returnPath =
+    fromEnquiryWorkflow
+      ? "/follow-ups"
+      : "/customers/add";
+
+  const returnLabel =
+    fromEnquiryWorkflow
+      ? "Back to Follow-ups"
+      : "Back to Add Customer";
+
+  /* ------------------------------------------------------------------------ */
+  /* STATE                                                                    */
+  /* ------------------------------------------------------------------------ */
 
   const [
     userId,
     setUserId,
-  ] = useState("");
+  ] =
+    useState("");
 
   const [
     loading,
     setLoading,
-  ] = useState(false);
+  ] =
+    useState(
+      false
+    );
 
   const [
     lookupLoading,
     setLookupLoading,
-  ] = useState(false);
+  ] =
+    useState(
+      false
+    );
 
   const [
     pinLoading,
     setPinLoading,
-  ] = useState(false);
+  ] =
+    useState(
+      false
+    );
 
   const [
     error,
     setError,
-  ] = useState("");
+  ] =
+    useState("");
 
   const [
     message,
     setMessage,
-  ] = useState("");
+  ] =
+    useState("");
 
   const [
     sameWhatsApp,
     setSameWhatsApp,
-  ] = useState(true);
+  ] =
+    useState(
+      true
+    );
 
   const [
     matches,
     setMatches,
-  ] = useState<
-    ExistingSubAgent[]
-  >([]);
-
-  /*
-   * Existing selected/autofilled record.
-   */
+  ] =
+    useState<
+      ExistingSubAgent[]
+    >([]);
 
   const [
     existingSubAgent,
     setExistingSubAgent,
-  ] = useState<
-    ExistingSubAgent | null
-  >(null);
+  ] =
+    useState<
+      ExistingSubAgent | null
+    >(
+      null
+    );
 
   const [
     form,
     setForm,
-  ] = useState({
-    name: "",
-    phone: "",
-    whatsapp: "",
-    email: "",
-    address: "",
-    district: "",
-    state: "Kerala",
-    pincode: "",
-    notes: "",
-  });
+  ] =
+    useState({
+      name: "",
+      phone: "",
+      whatsapp: "",
+      email: "",
+      address: "",
+      district: "",
+      state: "Kerala",
+      pincode: "",
+      notes: "",
+    });
 
   /* ------------------------------------------------------------------------ */
-  /* USER                                                                     */
+  /* LOAD USER                                                                */
   /* ------------------------------------------------------------------------ */
 
   useEffect(() => {
@@ -147,31 +248,47 @@ export default function AddSubAgentPage() {
       );
 
     if (!savedUserId) {
-      const storedUser =
-        localStorage.getItem(
-          "agentUser"
-        );
+      for (
+        const key of [
+          "agentUser",
+          "user",
+        ]
+      ) {
+        const stored =
+          localStorage.getItem(
+            key
+          );
 
-      if (storedUser) {
+        if (!stored) {
+          continue;
+        }
+
         try {
           const parsed =
             JSON.parse(
-              storedUser
+              stored
             );
 
-          if (parsed?.id) {
+          const id =
+            String(
+              parsed?.id ||
+                parsed?.userId ||
+                ""
+            ).trim();
+
+          if (id) {
             savedUserId =
-              String(
-                parsed.id
-              );
+              id;
 
             localStorage.setItem(
               "userId",
-              savedUserId
+              id
             );
+
+            break;
           }
         } catch {
-          // Ignore.
+          // Ignore invalid storage.
         }
       }
     }
@@ -182,6 +299,50 @@ export default function AddSubAgentPage() {
       );
     }
   }, []);
+
+  /* ------------------------------------------------------------------------ */
+  /* PREFILL FROM ENQUIRY                                                     */
+  /* ------------------------------------------------------------------------ */
+
+  useEffect(() => {
+    if (
+      !prefillName &&
+      !prefillPhone
+    ) {
+      return;
+    }
+
+    setForm(
+      (
+        previous
+      ) => ({
+        ...previous,
+
+        name:
+          previous.name ||
+          prefillName,
+
+        phone:
+          previous.phone ||
+          prefillPhone,
+
+        whatsapp:
+          previous.whatsapp ||
+          prefillPhone,
+      })
+    );
+
+    if (
+      prefillPhone
+    ) {
+      setSameWhatsApp(
+        true
+      );
+    }
+  }, [
+    prefillName,
+    prefillPhone,
+  ]);
 
   /* ------------------------------------------------------------------------ */
   /* LIVE NAME LOOKUP                                                         */
@@ -201,11 +362,11 @@ export default function AddSubAgentPage() {
     const timer =
       window.setTimeout(
         () => {
-          lookupByName(
+          void lookupByName(
             name
           );
         },
-        300
+        350
       );
 
     return () =>
@@ -235,11 +396,11 @@ export default function AddSubAgentPage() {
     const timer =
       window.setTimeout(
         () => {
-          lookupByPhone(
+          void lookupByPhone(
             phone
           );
         },
-        300
+        350
       );
 
     return () =>
@@ -252,7 +413,7 @@ export default function AddSubAgentPage() {
   ]);
 
   /* ------------------------------------------------------------------------ */
-  /* LOOKUP NAME                                                              */
+  /* LOOKUP BY NAME                                                           */
   /* ------------------------------------------------------------------------ */
 
   async function lookupByName(
@@ -276,10 +437,11 @@ export default function AddSubAgentPage() {
           }
         );
 
-      let data: {
-        success?: boolean;
-        subAgents?: ExistingSubAgent[];
-      } = {};
+      let data:
+        {
+          success?: boolean;
+          subAgents?: ExistingSubAgent[];
+        } = {};
 
       try {
         data =
@@ -306,16 +468,11 @@ export default function AddSubAgentPage() {
         list
       );
 
-      /*
-       * AUTO POPULATE:
-       *
-       * Only when exactly one record
-       * has exactly the same name.
-       */
-
       const exact =
         list.filter(
-          (item) =>
+          (
+            item
+          ) =>
             item.name
               .trim()
               .toLowerCase() ===
@@ -325,16 +482,19 @@ export default function AddSubAgentPage() {
         );
 
       if (
-        exact.length === 1
+        exact.length ===
+        1
       ) {
         populateExistingSubAgent(
           exact[0]
         );
       }
-    } catch (error) {
+    } catch (
+      err
+    ) {
       console.error(
         "SUB AGENT NAME LOOKUP ERROR:",
-        error
+        err
       );
     } finally {
       setLookupLoading(
@@ -344,7 +504,7 @@ export default function AddSubAgentPage() {
   }
 
   /* ------------------------------------------------------------------------ */
-  /* LOOKUP PHONE                                                             */
+  /* LOOKUP BY PHONE                                                          */
   /* ------------------------------------------------------------------------ */
 
   async function lookupByPhone(
@@ -368,10 +528,11 @@ export default function AddSubAgentPage() {
           }
         );
 
-      let data: {
-        success?: boolean;
-        subAgents?: ExistingSubAgent[];
-      } = {};
+      let data:
+        {
+          success?: boolean;
+          subAgents?: ExistingSubAgent[];
+        } = {};
 
       try {
         data =
@@ -398,17 +559,15 @@ export default function AddSubAgentPage() {
         list
       );
 
-      /*
-       * Exact 10 digit mobile:
-       * automatically populate existing.
-       */
-
       if (
-        phone.length === 10
+        phone.length ===
+        10
       ) {
         const exact =
           list.filter(
-            (item) =>
+            (
+              item
+            ) =>
               item.phone ===
                 phone ||
               item.whatsapp ===
@@ -416,17 +575,20 @@ export default function AddSubAgentPage() {
           );
 
         if (
-          exact.length === 1
+          exact.length ===
+          1
         ) {
           populateExistingSubAgent(
             exact[0]
           );
         }
       }
-    } catch (error) {
+    } catch (
+      err
+    ) {
       console.error(
         "SUB AGENT MOBILE LOOKUP ERROR:",
-        error
+        err
       );
     } finally {
       setLookupLoading(
@@ -436,7 +598,7 @@ export default function AddSubAgentPage() {
   }
 
   /* ------------------------------------------------------------------------ */
-  /* POPULATE EXISTING SUB-AGENT                                              */
+  /* POPULATE EXISTING                                                        */
   /* ------------------------------------------------------------------------ */
 
   function populateExistingSubAgent(
@@ -448,26 +610,26 @@ export default function AddSubAgentPage() {
     );
 
     const mobile =
-      subAgent.phone || "";
+      subAgent.phone ||
+      "";
 
     const whatsapp =
-      subAgent.whatsapp || "";
-
-    const whatsappSame =
-      Boolean(
-        mobile &&
-        whatsapp &&
-        mobile ===
-          whatsapp
-      );
+      subAgent.whatsapp ||
+      "";
 
     setSameWhatsApp(
-      whatsappSame
+      Boolean(
+        mobile &&
+          whatsapp &&
+          mobile ===
+            whatsapp
+      )
     );
 
     setForm({
       name:
-        subAgent.name || "",
+        subAgent.name ||
+        "",
 
       phone:
         mobile,
@@ -476,23 +638,28 @@ export default function AddSubAgentPage() {
         whatsapp,
 
       email:
-        subAgent.email || "",
+        subAgent.email ||
+        "",
 
       address:
-        subAgent.address || "",
+        subAgent.address ||
+        "",
 
       district:
-        subAgent.district || "",
+        subAgent.district ||
+        "",
 
       state:
         subAgent.state ||
         "Kerala",
 
       pincode:
-        subAgent.pincode || "",
+        subAgent.pincode ||
+        "",
 
       notes:
-        subAgent.notes || "",
+        subAgent.notes ||
+        "",
     });
 
     setError("");
@@ -503,7 +670,7 @@ export default function AddSubAgentPage() {
   }
 
   /* ------------------------------------------------------------------------ */
-  /* CLEAR EXISTING SELECTION                                                 */
+  /* CLEAR EXISTING                                                           */
   /* ------------------------------------------------------------------------ */
 
   function clearExistingSubAgent() {
@@ -518,14 +685,26 @@ export default function AddSubAgentPage() {
     setMessage("");
 
     setForm({
-      name: "",
-      phone: "",
-      whatsapp: "",
+      name:
+        prefillName,
+
+      phone:
+        prefillPhone,
+
+      whatsapp:
+        prefillPhone,
+
       email: "",
+
       address: "",
+
       district: "",
-      state: "Kerala",
+
+      state:
+        "Kerala",
+
       pincode: "",
+
       notes: "",
     });
 
@@ -535,7 +714,7 @@ export default function AddSubAgentPage() {
   }
 
   /* ------------------------------------------------------------------------ */
-  /* FIELD UPDATE                                                             */
+  /* STANDARD FIELD                                                           */
   /* ------------------------------------------------------------------------ */
 
   function updateField(
@@ -552,15 +731,10 @@ export default function AddSubAgentPage() {
     } =
       event.target;
 
-    /*
-     * Once user manually changes an
-     * existing auto-filled record,
-     * clear existing state.
-     */
-
     if (
       existingSubAgent &&
-      name === "name" &&
+      name ===
+        "name" &&
       value !==
         existingSubAgent.name
     ) {
@@ -572,7 +746,9 @@ export default function AddSubAgentPage() {
     }
 
     setForm(
-      (previous) => ({
+      (
+        previous
+      ) => ({
         ...previous,
 
         [name]:
@@ -613,7 +789,9 @@ export default function AddSubAgentPage() {
     }
 
     setForm(
-      (previous) => ({
+      (
+        previous
+      ) => ({
         ...previous,
 
         phone:
@@ -627,7 +805,8 @@ export default function AddSubAgentPage() {
     );
 
     if (
-      value.length < 7
+      value.length <
+      7
     ) {
       setMatches(
         []
@@ -655,7 +834,9 @@ export default function AddSubAgentPage() {
         );
 
     setForm(
-      (previous) => ({
+      (
+        previous
+      ) => ({
         ...previous,
 
         whatsapp:
@@ -681,7 +862,9 @@ export default function AddSubAgentPage() {
 
     if (checked) {
       setForm(
-        (previous) => ({
+        (
+          previous
+        ) => ({
           ...previous,
 
           whatsapp:
@@ -692,7 +875,7 @@ export default function AddSubAgentPage() {
   }
 
   /* ------------------------------------------------------------------------ */
-  /* PINCODE LOOKUP                                                           */
+  /* PINCODE                                                                  */
   /* ------------------------------------------------------------------------ */
 
   async function lookupPincode(
@@ -733,7 +916,9 @@ export default function AddSubAgentPage() {
             .PostOffice[0];
 
         setForm(
-          (previous) => ({
+          (
+            previous
+          ) => ({
             ...previous,
 
             district:
@@ -746,10 +931,12 @@ export default function AddSubAgentPage() {
           })
         );
       }
-    } catch (error) {
+    } catch (
+      err
+    ) {
       console.error(
         "PINCODE LOOKUP ERROR:",
-        error
+        err
       );
     } finally {
       setPinLoading(
@@ -757,10 +944,6 @@ export default function AddSubAgentPage() {
       );
     }
   }
-
-  /* ------------------------------------------------------------------------ */
-  /* PINCODE CHANGE                                                           */
-  /* ------------------------------------------------------------------------ */
 
   function handlePincodeChange(
     event:
@@ -778,7 +961,9 @@ export default function AddSubAgentPage() {
         );
 
     setForm(
-      (previous) => ({
+      (
+        previous
+      ) => ({
         ...previous,
 
         pincode:
@@ -787,12 +972,23 @@ export default function AddSubAgentPage() {
     );
 
     if (
-      value.length === 6
+      value.length ===
+      6
     ) {
-      lookupPincode(
+      void lookupPincode(
         value
       );
     }
+  }
+
+  /* ------------------------------------------------------------------------ */
+  /* BACK / CANCEL                                                            */
+  /* ------------------------------------------------------------------------ */
+
+  function handleBack() {
+    router.push(
+      returnPath
+    );
   }
 
   /* ------------------------------------------------------------------------ */
@@ -806,10 +1002,10 @@ export default function AddSubAgentPage() {
     event.preventDefault();
 
     setError("");
+    setMessage("");
 
     /*
-     * Existing selected record:
-     * never create duplicate.
+     * Never create a duplicate.
      */
 
     if (
@@ -825,9 +1021,12 @@ export default function AddSubAgentPage() {
     const currentUserId =
       localStorage.getItem(
         "userId"
-      ) || userId;
+      ) ||
+      userId;
 
-    if (!currentUserId) {
+    if (
+      !currentUserId
+    ) {
       setError(
         "Login information not found. Please login again."
       );
@@ -947,15 +1146,16 @@ export default function AddSubAgentPage() {
           }
         );
 
-      let data: {
-        success?: boolean;
+      let data:
+        {
+          success?: boolean;
 
-        message?: string;
+          message?: string;
 
-        duplicate?: boolean;
+          duplicate?: boolean;
 
-        subAgent?: ExistingSubAgent;
-      } = {};
+          subAgent?: ExistingSubAgent;
+        } = {};
 
       try {
         data =
@@ -984,12 +1184,10 @@ export default function AddSubAgentPage() {
           return;
         }
 
-        setError(
+        throw new Error(
           data.message ||
             "Unable to create Sub-Agent."
         );
-
-        return;
       }
 
       setMessage(
@@ -998,24 +1196,38 @@ export default function AddSubAgentPage() {
           : "Sub-Agent created successfully."
       );
 
+      /*
+       * IMPORTANT:
+       *
+       * Normal Sub-Agent creation:
+       *     → Add Customer
+       *
+       * Enquiry / Follow-up conversion:
+       *     → Follow-ups
+       */
+
       window.setTimeout(
         () => {
           router.push(
-            "/customers/add"
+            returnPath
           );
 
           router.refresh();
         },
         700
       );
-    } catch (error) {
+    } catch (
+      err
+    ) {
       console.error(
         "CREATE SUB AGENT ERROR:",
-        error
+        err
       );
 
       setError(
-        "Unable to create Sub-Agent."
+        err instanceof Error
+          ? err.message
+          : "Unable to create Sub-Agent."
       );
     } finally {
       setLoading(
@@ -1033,19 +1245,37 @@ export default function AddSubAgentPage() {
 
       <div className="mx-auto max-w-3xl">
 
+        {/* BACK */}
+
         <button
           type="button"
-          onClick={() =>
-            router.push(
-              "/customers/add"
-            )
+          onClick={
+            handleBack
           }
           className="mb-6 font-bold text-blue-700 hover:underline"
         >
-          ← Back to Add Customer
+          ← {returnLabel}
         </button>
 
+        {/* WORKFLOW NOTICE */}
+
+        {fromEnquiryWorkflow && (
+          <div className="mb-5 rounded-2xl border border-violet-200 bg-violet-50 p-4">
+
+            <p className="font-black text-violet-900">
+              🤝 Sub-Agent Lead Conversion
+            </p>
+
+            <p className="mt-1 text-sm font-semibold text-violet-700">
+              Create the Sub-Agent only if the lead is confirmed. Back or Cancel will return to Follow-ups without creating anything.
+            </p>
+
+          </div>
+        )}
+
         <div className="overflow-hidden rounded-2xl border bg-white shadow-sm">
+
+          {/* HEADER */}
 
           <div className="border-b bg-blue-50 px-6 py-7 md:px-8">
 
@@ -1178,7 +1408,7 @@ export default function AddSubAgentPage() {
 
             </div>
 
-            {/* EXISTING WARNING */}
+            {/* EXISTING */}
 
             {existingSubAgent && (
               <div className="rounded-xl border border-orange-300 bg-orange-50 p-4">
@@ -1188,7 +1418,8 @@ export default function AddSubAgentPage() {
                 </p>
 
                 <p className="mt-1 text-sm font-bold text-orange-800">
-                  {existingSubAgent.code} —{" "}
+                  {existingSubAgent.code}
+                  {" — "}
                   {existingSubAgent.name}
                 </p>
 
@@ -1453,30 +1684,39 @@ export default function AddSubAgentPage() {
 
             </div>
 
+            {/* ERROR */}
+
             {error && (
               <div className="rounded-xl border border-red-300 bg-red-50 p-4 font-bold text-red-800">
-                {error}
+                ⚠️ {error}
               </div>
             )}
+
+            {/* SUCCESS */}
 
             {message && (
               <div className="rounded-xl border border-emerald-300 bg-emerald-50 p-4 font-bold text-emerald-800">
-                {message}
+                ✅ {message}
               </div>
             )}
 
-            <div className="flex gap-3 border-t pt-5">
+            {/* BUTTONS */}
+
+            <div className="flex flex-col-reverse gap-3 border-t pt-5 sm:flex-row">
 
               <button
                 type="button"
-                onClick={() =>
-                  router.push(
-                    "/customers/add"
-                  )
+                onClick={
+                  handleBack
                 }
-                className="rounded-xl border px-5 py-3 font-black"
+                disabled={
+                  loading
+                }
+                className="rounded-xl border px-5 py-3 font-black disabled:opacity-50"
               >
-                Cancel
+                {fromEnquiryWorkflow
+                  ? "Cancel & Back to Follow-ups"
+                  : "Cancel"}
               </button>
 
               <button
@@ -1493,7 +1733,9 @@ export default function AddSubAgentPage() {
                   ? "Existing Sub-Agent"
                   : loading
                     ? "Creating..."
-                    : "Create Sub-Agent"}
+                    : fromEnquiryWorkflow
+                      ? "Create Sub-Agent"
+                      : "Create Sub-Agent"}
               </button>
 
             </div>

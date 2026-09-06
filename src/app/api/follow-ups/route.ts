@@ -23,10 +23,13 @@ function parseDate(
     return null;
   }
 
+  // Safely format date-only strings (YYYY-MM-DD) vs full ISO strings
+  const formattedText = /^\d{4}-\d{2}-\d{2}$/.test(text)
+    ? `${text}T00:00:00.000Z`
+    : text;
+
   const date =
-    new Date(
-      `${text}T00:00:00.000Z`
-    );
+    new Date(formattedText);
 
   if (
     Number.isNaN(
@@ -575,28 +578,6 @@ export async function POST(
 /* -------------------------------------------------------------------------- */
 /* UPDATE FOLLOW-UP RESULT                                                    */
 /* -------------------------------------------------------------------------- */
-/*
-IMPORTANT:
-
-READY_FOR_POLICY is a UI/business workflow value.
-
-We DO NOT save READY_FOR_POLICY into Prisma FollowUpOutcome.
-
-Instead:
-
-READY_FOR_POLICY
-    ↓
-FollowUp outcome = CONTINUE
-FollowUp status  = COMPLETED
-Enquiry status   = FOLLOW_UP
-Next follow-up   = NULL
-
-Then UI shows:
-
-+ Create Policy
-
-This means NO Prisma migration is required.
-*/
 
 export async function PUT(
   request: NextRequest
@@ -680,9 +661,7 @@ export async function PUT(
       );
     }
 
-    /* ---------------------------------------------------------------------- */
-    /* READY FOR POLICY                                                       */
-    /* ---------------------------------------------------------------------- */
+    /* READY FOR POLICY */
 
     const readyForPolicy =
       requestedOutcome ===
@@ -893,17 +872,11 @@ export async function PUT(
       );
     }
 
-    /* ---------------------------------------------------------------------- */
-    /* TRANSACTION                                                            */
-    /* ---------------------------------------------------------------------- */
+    /* TRANSACTION */
 
     const updated =
       await prisma.$transaction(
         async (tx) => {
-          /* ================================================================= */
-          /* CONTINUE                                                         */
-          /* ================================================================= */
-
           if (
             requestedOutcome ===
             "CONTINUE"
@@ -967,10 +940,6 @@ export async function PUT(
             return followUp;
           }
 
-          /* ================================================================= */
-          /* READY FOR POLICY                                                  */
-          /* ================================================================= */
-
           if (
             requestedOutcome ===
             "READY_FOR_POLICY"
@@ -993,11 +962,6 @@ export async function PUT(
 
                   nextFollowUpDate:
                     null,
-
-                  /*
-                   * We use existing Prisma values.
-                   * No schema migration needed.
-                   */
 
                   status:
                     "COMPLETED",
@@ -1026,11 +990,6 @@ export async function PUT(
                 },
 
                 data: {
-                  /*
-                   * IMPORTANT:
-                   * Do NOT convert yet.
-                   */
-
                   status:
                     "FOLLOW_UP",
 
@@ -1048,10 +1007,6 @@ export async function PUT(
 
             return followUp;
           }
-
-          /* ================================================================= */
-          /* POLICY ISSUED / CONVERTED                                         */
-          /* ================================================================= */
 
           if (
             requestedOutcome ===
@@ -1121,10 +1076,6 @@ export async function PUT(
             return followUp;
           }
 
-          /* ================================================================= */
-          /* CASE LOST                                                        */
-          /* ================================================================= */
-
           if (
             requestedOutcome ===
             "CASE_LOST"
@@ -1192,10 +1143,6 @@ export async function PUT(
             return followUp;
           }
 
-          /* ================================================================= */
-          /* CANCELLED                                                        */
-          /* ================================================================= */
-
           const now =
             new Date();
 
@@ -1260,9 +1207,7 @@ export async function PUT(
         }
       );
 
-    /* ---------------------------------------------------------------------- */
-    /* MESSAGE                                                                */
-    /* ---------------------------------------------------------------------- */
+    /* MESSAGE */
 
     let message =
       "Follow-up updated successfully.";
