@@ -9,7 +9,6 @@ import {
 } from "react";
 import {
   useRouter,
-  useSearchParams,
 } from "next/navigation";
 
 /* -------------------------------------------------------------------------- */
@@ -204,9 +203,6 @@ export default function MyRegularizationPage() {
   const router =
     useRouter();
 
-  const searchParams =
-    useSearchParams();
-
   const [
     staff,
     setStaff,
@@ -243,11 +239,7 @@ export default function MyRegularizationPage() {
     attendanceDate,
     setAttendanceDate,
   ] =
-    useState(
-      searchParams.get(
-        "date"
-      ) || ""
-    );
+    useState("");
 
   const [
     reasonChoice,
@@ -387,6 +379,20 @@ export default function MyRegularizationPage() {
     );
 
   useEffect(() => {
+    const params =
+      new URLSearchParams(
+        window.location.search
+      );
+
+    const dateFromUrl =
+      params.get("date");
+
+    if (dateFromUrl) {
+      setAttendanceDate(
+        dateFromUrl
+      );
+    }
+
     const currentStaff =
       getLoggedInStaff();
 
