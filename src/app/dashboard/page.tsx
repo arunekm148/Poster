@@ -1898,6 +1898,31 @@ router.replace(
 return;
 }
 
+/*
+ * IMPORTANT PORTAL ROUTING
+ *
+ * The Agent dashboard must never become the home page for a Staff or
+ * Supervisor session. Some older module pages still link to /dashboard.
+ * When that happens, Staff is immediately returned to /staff-dashboard.
+ */
+if (
+isStaffAccount(
+parsedUser
+)
+) {
+localStorage.setItem(
+"userId",
+parsedUser.userId ||
+parsedUser.id
+);
+
+router.replace(
+"/staff/dashboard"
+);
+
+return;
+}
+
 setUser(
 parsedUser
 );
@@ -1916,11 +1941,7 @@ savedMode
 }
 
 const dashboardUserId =
-isStaffAccount(
-parsedUser
-)
-? parsedUser.userId
-: parsedUser.id;
+parsedUser.id;
 
 if (!dashboardUserId) {
 throw new Error(

@@ -5,8 +5,23 @@ import {
 
 import prisma from "@/lib/prisma";
 
+import {
+  getSessionFromRequest,
+  isStaffSession,
+} from "@/lib/session";
+
 /* -------------------------------------------------------------------------- */
-/* HELPERS                                                                    */
+/* TYPES                                                                      */
+/* -------------------------------------------------------------------------- */
+
+type ActorInfo = {
+  type: "AGENT" | "STAFF";
+  name: string;
+  staffId: string | null;
+};
+
+/* -------------------------------------------------------------------------- */
+/* DATE                                                                       */
 /* -------------------------------------------------------------------------- */
 
 function parseDate(
@@ -23,13 +38,17 @@ function parseDate(
     return null;
   }
 
-  // Safely format date-only strings (YYYY-MM-DD) vs full ISO strings
-  const formattedText = /^\d{4}-\d{2}-\d{2}$/.test(text)
-    ? `${text}T00:00:00.000Z`
-    : text;
+  const normalized =
+    /^\d{4}-\d{2}-\d{2}$/.test(
+      text
+    )
+      ? `${text}T00:00:00`
+      : text;
 
   const date =
-    new Date(formattedText);
+    new Date(
+      normalized
+    );
 
   if (
     Number.isNaN(
@@ -43,7 +62,94 @@ function parseDate(
 }
 
 /* -------------------------------------------------------------------------- */
-/* GET FOLLOW-UPS                                                             */
+/* ACTOR                                                                      */
+/* -------------------------------------------------------------------------- */
+
+async function getActor(
+  request: NextRequest,
+  userId: string
+): Promise<ActorInfo> {
+  try {
+    const session =
+      getSessionFromRequest(
+        request
+      );
+
+    if (
+      session &&
+      isStaffSession(
+        session
+      ) &&
+      session.userId ===
+        userId &&
+      session.staffId
+    ) {
+      const staff =
+        await prisma.staff.findFirst({
+          where: {
+            id:
+              session.staffId,
+
+            userId,
+
+            isActive:
+              true,
+          },
+
+          select: {
+            id: true,
+            name: true,
+          },
+        });
+
+      if (staff) {
+        return {
+          type:
+            "STAFF",
+
+          name:
+            staff.name,
+
+          staffId:
+            staff.id,
+        };
+      }
+    }
+  } catch (error) {
+    console.error(
+      "FOLLOW-UP SESSION ACTOR ERROR:",
+      error
+    );
+  }
+
+  const user =
+    await prisma.user.findUnique({
+      where: {
+        id:
+          userId,
+      },
+
+      select: {
+        id: true,
+        name: true,
+      },
+    });
+
+  return {
+    type:
+      "AGENT",
+
+    name:
+      user?.name ||
+      "Agent",
+
+    staffId:
+      null,
+  };
+}
+
+/* -------------------------------------------------------------------------- */
+/* GET                                                                        */
 /* -------------------------------------------------------------------------- */
 
 export async function GET(
@@ -59,74 +165,98 @@ export async function GET(
 
     const userId =
       searchParams
-        .get("userId")
-        ?.trim() || "";
+        .get(
+          "userId"
+        )
+        ?.trim() ||
+      "";
 
     const customerId =
       searchParams
-        .get("customerId")
-        ?.trim() || "";
+        .get(
+          "customerId"
+        )
+        ?.trim() ||
+      "";
 
     const enquiryId =
       searchParams
-        .get("enquiryId")
-        ?.trim() || "";
+        .get(
+          "enquiryId"
+        )
+        ?.trim() ||
+      "";
 
     const status =
       searchParams
-        .get("status")
+        .get(
+          "status"
+        )
         ?.trim()
-        .toUpperCase() || "";
+        .toUpperCase() ||
+      "";
 
     if (!userId) {
       return NextResponse.json(
         {
-          success: false,
+          success:
+            false,
+
           message:
             "User ID is required.",
         },
         {
-          status: 400,
+          status:
+            400,
         }
       );
     }
 
-    /* CHECK USER */
-
     const user =
       await prisma.user.findUnique({
         where: {
-          id: userId,
+          id:
+            userId,
         },
 
         select: {
           id: true,
-          isActive: true,
+          name: true,
+          isActive:
+            true,
         },
       });
 
     if (!user) {
       return NextResponse.json(
         {
-          success: false,
+          success:
+            false,
+
           message:
             "Agent account not found.",
         },
         {
-          status: 404,
+          status:
+            404,
         }
       );
     }
 
-    if (!user.isActive) {
+    if (
+      !user.isActive
+    ) {
       return NextResponse.json(
         {
-          success: false,
+          success:
+            false,
+
           message:
             "Agent account is inactive.",
         },
         {
-          status: 403,
+          status:
+            403,
         }
       );
     }
@@ -174,56 +304,124 @@ export async function GET(
         },
 
         select: {
-          id: true,
-          userId: true,
-          customerId: true,
-          enquiryId: true,
+          id:
+            true,
 
-          comment: true,
+          userId:
+            true,
 
-          followUpDate: true,
-          nextFollowUpDate: true,
+          customerId:
+            true,
 
-          status: true,
-          outcome: true,
+          enquiryId:
+            true,
 
-          lostReason: true,
-          cancellationReason: true,
+          comment:
+            true,
 
-          completedAt: true,
-          createdAt: true,
-          updatedAt: true,
+          followUpDate:
+            true,
+
+          nextFollowUpDate:
+            true,
+
+          status:
+            true,
+
+          outcome:
+            true,
+
+          actionType:
+            true,
+
+          lostReason:
+            true,
+
+          cancellationReason:
+            true,
+
+          createdByType:
+            true,
+
+          createdByStaffId:
+            true,
+
+          createdByName:
+            true,
+
+          completedAt:
+            true,
+
+          createdAt:
+            true,
+
+          updatedAt:
+            true,
+
+          createdByStaff: {
+            select: {
+              id: true,
+              staffCode:
+                true,
+              name: true,
+              staffRole:
+                true,
+            },
+          },
 
           customer: {
             select: {
               id: true,
-              customerId: true,
+              customerId:
+                true,
               name: true,
               phone: true,
               email: true,
+              sourceType:
+                true,
+              subAgentId:
+                true,
+
+              subAgent: {
+                select: {
+                  id: true,
+                  code: true,
+                  name: true,
+                },
+              },
             },
           },
 
           enquiry: {
             select: {
               id: true,
-              businessType: true,
-              requirement: true,
-              remarks: true,
-              status: true,
-              enquiryDate: true,
-              nextFollowUpDate: true,
+              businessType:
+                true,
+              requirement:
+                true,
+              remarks:
+                true,
+              status:
+                true,
+              enquiryDate:
+                true,
+              nextFollowUpDate:
+                true,
+              convertedAt:
+                true,
+              closedAt:
+                true,
             },
           },
         },
 
         orderBy: [
           {
-            followUpDate:
+            createdAt:
               "desc",
           },
           {
-            createdAt:
+            followUpDate:
               "desc",
           },
         ],
@@ -231,11 +429,22 @@ export async function GET(
 
     return NextResponse.json(
       {
-        success: true,
+        success:
+          true,
+
+        agent: {
+          id:
+            user.id,
+
+          name:
+            user.name,
+        },
+
         followUps,
       },
       {
-        status: 200,
+        status:
+          200,
       }
     );
   } catch (error) {
@@ -246,19 +455,22 @@ export async function GET(
 
     return NextResponse.json(
       {
-        success: false,
+        success:
+          false,
+
         message:
           "Unable to load follow-ups.",
       },
       {
-        status: 500,
+        status:
+          500,
       }
     );
   }
 }
 
 /* -------------------------------------------------------------------------- */
-/* CREATE FOLLOW-UP                                                           */
+/* CREATE                                                                     */
 /* -------------------------------------------------------------------------- */
 
 export async function POST(
@@ -270,35 +482,40 @@ export async function POST(
 
     const userId =
       String(
-        body.userId || ""
+        body.userId ||
+        ""
       ).trim();
 
     const customerId =
       String(
-        body.customerId || ""
+        body.customerId ||
+        ""
       ).trim();
 
     const enquiryId =
       String(
-        body.enquiryId || ""
+        body.enquiryId ||
+        ""
       ).trim();
 
     const comment =
       String(
-        body.comment || ""
+        body.comment ||
+        ""
       ).trim();
-
-    /* REQUIRED */
 
     if (!userId) {
       return NextResponse.json(
         {
-          success: false,
+          success:
+            false,
+
           message:
             "User ID is required.",
         },
         {
-          status: 400,
+          status:
+            400,
         }
       );
     }
@@ -306,12 +523,15 @@ export async function POST(
     if (!customerId) {
       return NextResponse.json(
         {
-          success: false,
+          success:
+            false,
+
           message:
             "Customer is required.",
         },
         {
-          status: 400,
+          status:
+            400,
         }
       );
     }
@@ -319,12 +539,15 @@ export async function POST(
     if (!enquiryId) {
       return NextResponse.json(
         {
-          success: false,
+          success:
+            false,
+
           message:
             "Enquiry is required.",
         },
         {
-          status: 400,
+          status:
+            400,
         }
       );
     }
@@ -332,17 +555,18 @@ export async function POST(
     if (!comment) {
       return NextResponse.json(
         {
-          success: false,
+          success:
+            false,
+
           message:
             "Follow-up remarks are required.",
         },
         {
-          status: 400,
+          status:
+            400,
         }
       );
     }
-
-    /* FOLLOW-UP DATE */
 
     const followUpDate =
       parseDate(
@@ -352,21 +576,23 @@ export async function POST(
     if (!followUpDate) {
       return NextResponse.json(
         {
-          success: false,
+          success:
+            false,
+
           message:
             "Please select a valid follow-up date.",
         },
         {
-          status: 400,
+          status:
+            400,
         }
       );
     }
 
-    /* NEXT FOLLOW-UP */
-
     let nextFollowUpDate:
       | Date
-      | null = null;
+      | null =
+      null;
 
     if (
       body.nextFollowUpDate
@@ -376,135 +602,150 @@ export async function POST(
           body.nextFollowUpDate
         );
 
-      if (!nextFollowUpDate) {
+      if (
+        !nextFollowUpDate
+      ) {
         return NextResponse.json(
           {
-            success: false,
+            success:
+              false,
+
             message:
               "Please select a valid next follow-up date.",
           },
           {
-            status: 400,
+            status:
+              400,
           }
         );
       }
     }
 
-    /* USER */
-
     const user =
       await prisma.user.findUnique({
         where: {
-          id: userId,
+          id:
+            userId,
         },
 
         select: {
           id: true,
-          isActive: true,
+          isActive:
+            true,
         },
       });
 
-    if (!user) {
+    if (
+      !user ||
+      !user.isActive
+    ) {
       return NextResponse.json(
         {
-          success: false,
+          success:
+            false,
+
           message:
-            "Agent account not found.",
+            "Agent account is not available.",
         },
         {
-          status: 404,
+          status:
+            403,
         }
       );
     }
-
-    if (!user.isActive) {
-      return NextResponse.json(
-        {
-          success: false,
-          message:
-            "Agent account is inactive.",
-        },
-        {
-          status: 403,
-        }
-      );
-    }
-
-    /* CUSTOMER */
 
     const customer =
       await prisma.customer.findFirst({
         where: {
-          id: customerId,
+          id:
+            customerId,
+
           userId,
-          isActive: true,
+
+          isActive:
+            true,
         },
 
         select: {
           id: true,
-          customerId: true,
-          name: true,
         },
       });
 
     if (!customer) {
       return NextResponse.json(
         {
-          success: false,
+          success:
+            false,
+
           message:
             "Customer not found for this agent.",
         },
         {
-          status: 404,
+          status:
+            404,
         }
       );
     }
 
-    /* ENQUIRY */
-
     const enquiry =
       await prisma.enquiry.findFirst({
         where: {
-          id: enquiryId,
+          id:
+            enquiryId,
+
           userId,
+
           customerId,
-          isActive: true,
+
+          isActive:
+            true,
         },
 
         select: {
           id: true,
-          status: true,
         },
       });
 
     if (!enquiry) {
       return NextResponse.json(
         {
-          success: false,
+          success:
+            false,
+
           message:
             "Enquiry not found for this customer.",
         },
         {
-          status: 404,
+          status:
+            404,
         }
       );
     }
 
-    /* CREATE */
+    const actor =
+      await getActor(
+        request,
+        userId
+      );
 
     const followUp =
       await prisma.$transaction(
-        async (tx) => {
+        async (
+          tx
+        ) => {
           const created =
             await tx.followUp.create({
               data: {
                 userId,
+
                 customerId,
+
                 enquiryId,
 
                 comment,
 
                 followUpDate,
+
                 nextFollowUpDate,
 
                 status:
@@ -512,6 +753,18 @@ export async function POST(
 
                 outcome:
                   "CONTINUE",
+
+                actionType:
+                  "FOLLOW_UP",
+
+                createdByType:
+                  actor.type,
+
+                createdByStaffId:
+                  actor.staffId,
+
+                createdByName:
+                  actor.name,
 
                 lostReason:
                   null,
@@ -526,7 +779,8 @@ export async function POST(
 
           await tx.enquiry.update({
             where: {
-              id: enquiryId,
+              id:
+                enquiryId,
             },
 
             data: {
@@ -543,17 +797,17 @@ export async function POST(
 
     return NextResponse.json(
       {
-        success: true,
+        success:
+          true,
 
         message:
-          nextFollowUpDate
-            ? "Follow-up saved and next follow-up scheduled."
-            : "Follow-up saved successfully.",
+          "Follow-up saved successfully.",
 
         followUp,
       },
       {
-        status: 201,
+        status:
+          201,
       }
     );
   } catch (error) {
@@ -564,19 +818,22 @@ export async function POST(
 
     return NextResponse.json(
       {
-        success: false,
+        success:
+          false,
+
         message:
           "Unable to save follow-up.",
       },
       {
-        status: 500,
+        status:
+          500,
       }
     );
   }
 }
 
 /* -------------------------------------------------------------------------- */
-/* UPDATE FOLLOW-UP RESULT                                                    */
+/* UPDATE / NEW HISTORY ENTRY                                                 */
 /* -------------------------------------------------------------------------- */
 
 export async function PUT(
@@ -588,49 +845,54 @@ export async function PUT(
 
     const id =
       String(
-        body.id || ""
+        body.id ||
+        ""
       ).trim();
 
     const userId =
       String(
-        body.userId || ""
+        body.userId ||
+        ""
       ).trim();
 
     const comment =
       String(
-        body.comment || ""
+        body.comment ||
+        ""
       ).trim();
 
     const requestedOutcome =
       String(
         body.outcome ||
-          "CONTINUE"
+        "CONTINUE"
       )
         .trim()
         .toUpperCase();
 
     const lostReason =
       String(
-        body.lostReason || ""
+        body.lostReason ||
+        ""
       ).trim();
 
     const cancellationReason =
       String(
         body.cancellationReason ||
-          ""
+        ""
       ).trim();
-
-    /* REQUIRED */
 
     if (!id) {
       return NextResponse.json(
         {
-          success: false,
+          success:
+            false,
+
           message:
             "Follow-up ID is required.",
         },
         {
-          status: 400,
+          status:
+            400,
         }
       );
     }
@@ -638,12 +900,15 @@ export async function PUT(
     if (!userId) {
       return NextResponse.json(
         {
-          success: false,
+          success:
+            false,
+
           message:
             "User ID is required.",
         },
         {
-          status: 400,
+          status:
+            400,
         }
       );
     }
@@ -651,21 +916,18 @@ export async function PUT(
     if (!comment) {
       return NextResponse.json(
         {
-          success: false,
+          success:
+            false,
+
           message:
-            "Follow-up remarks are required.",
+            "Please enter new follow-up remarks.",
         },
         {
-          status: 400,
+          status:
+            400,
         }
       );
     }
-
-    /* READY FOR POLICY */
-
-    const readyForPolicy =
-      requestedOutcome ===
-      "READY_FOR_POLICY";
 
     const allowedOutcomes = [
       "CONTINUE",
@@ -682,17 +944,18 @@ export async function PUT(
     ) {
       return NextResponse.json(
         {
-          success: false,
+          success:
+            false,
+
           message:
             "Invalid follow-up result.",
         },
         {
-          status: 400,
+          status:
+            400,
         }
       );
     }
-
-    /* REASONS */
 
     if (
       requestedOutcome ===
@@ -701,12 +964,15 @@ export async function PUT(
     ) {
       return NextResponse.json(
         {
-          success: false,
+          success:
+            false,
+
           message:
             "Please enter the lost reason.",
         },
         {
-          status: 400,
+          status:
+            400,
         }
       );
     }
@@ -718,49 +984,46 @@ export async function PUT(
     ) {
       return NextResponse.json(
         {
-          success: false,
+          success:
+            false,
+
           message:
             "Please enter the cancellation reason.",
         },
         {
-          status: 400,
+          status:
+            400,
         }
       );
     }
 
-    /* FOLLOW-UP DATE */
-
-    let followUpDate:
-      | Date
-      | null = null;
-
-    if (
+    const actionDate =
       body.followUpDate
-    ) {
-      followUpDate =
-        parseDate(
-          body.followUpDate
-        );
+        ? parseDate(
+            body.followUpDate
+          )
+        : new Date();
 
-      if (!followUpDate) {
-        return NextResponse.json(
-          {
-            success: false,
-            message:
-              "Please select a valid follow-up date.",
-          },
-          {
-            status: 400,
-          }
-        );
-      }
+    if (!actionDate) {
+      return NextResponse.json(
+        {
+          success:
+            false,
+
+          message:
+            "Please select a valid follow-up date.",
+        },
+        {
+          status:
+            400,
+        }
+      );
     }
-
-    /* NEXT FOLLOW-UP */
 
     let nextFollowUpDate:
       | Date
-      | null = null;
+      | null =
+      null;
 
     if (
       body.nextFollowUpDate
@@ -770,15 +1033,20 @@ export async function PUT(
           body.nextFollowUpDate
         );
 
-      if (!nextFollowUpDate) {
+      if (
+        !nextFollowUpDate
+      ) {
         return NextResponse.json(
           {
-            success: false,
+            success:
+              false,
+
             message:
               "Please select a valid next follow-up date.",
           },
           {
-            status: 400,
+            status:
+              400,
           }
         );
       }
@@ -791,108 +1059,117 @@ export async function PUT(
     ) {
       return NextResponse.json(
         {
-          success: false,
+          success:
+            false,
+
           message:
             "Please select the next follow-up date.",
         },
         {
-          status: 400,
+          status:
+            400,
         }
       );
     }
-
-    /* USER */
-
-    const user =
-      await prisma.user.findUnique({
-        where: {
-          id: userId,
-        },
-
-        select: {
-          id: true,
-          isActive: true,
-        },
-      });
-
-    if (!user) {
-      return NextResponse.json(
-        {
-          success: false,
-          message:
-            "Agent account not found.",
-        },
-        {
-          status: 404,
-        }
-      );
-    }
-
-    if (!user.isActive) {
-      return NextResponse.json(
-        {
-          success: false,
-          message:
-            "Agent account is inactive.",
-        },
-        {
-          status: 403,
-        }
-      );
-    }
-
-    /* FOLLOW-UP */
 
     const existing =
       await prisma.followUp.findFirst({
         where: {
           id,
+
           userId,
         },
 
         select: {
           id: true,
-          customerId: true,
-          enquiryId: true,
-          followUpDate: true,
-          status: true,
+          customerId:
+            true,
+          enquiryId:
+            true,
+          status:
+            true,
         },
       });
 
     if (!existing) {
       return NextResponse.json(
         {
-          success: false,
+          success:
+            false,
+
           message:
             "Follow-up not found.",
         },
         {
-          status: 404,
+          status:
+            404,
         }
       );
     }
 
-    /* TRANSACTION */
+    const actor =
+      await getActor(
+        request,
+        userId
+      );
 
-    const updated =
-      await prisma.$transaction(
-        async (tx) => {
-          if (
-            requestedOutcome ===
-            "CONTINUE"
-          ) {
-            const followUp =
-              await tx.followUp.update({
-                where: {
-                  id,
-                },
+    const now =
+      new Date();
 
+    /* ---------------------------------------------------------------------- */
+    /* CONTINUE                                                               */
+    /* ---------------------------------------------------------------------- */
+
+    if (
+      requestedOutcome ===
+      "CONTINUE"
+    ) {
+      const created =
+        await prisma.$transaction(
+          async (
+            tx
+          ) => {
+            /*
+             * Complete previous pending row.
+             *
+             * IMPORTANT:
+             * We NEVER overwrite its old comment.
+             */
+
+            await tx.followUp.update({
+              where: {
+                id:
+                  existing.id,
+              },
+
+              data: {
+                status:
+                  "COMPLETED",
+
+                completedAt:
+                  now,
+              },
+            });
+
+            /*
+             * New discussion becomes a new row.
+             */
+
+            const newRow =
+              await tx.followUp.create({
                 data: {
+                  userId,
+
+                  customerId:
+                    existing.customerId,
+
+                  enquiryId:
+                    existing.enquiryId,
+
                   comment,
 
                   followUpDate:
-                    followUpDate ??
-                    existing.followUpDate,
+                    actionDate,
 
                   nextFollowUpDate,
 
@@ -901,6 +1178,18 @@ export async function PUT(
 
                   outcome:
                     "CONTINUE",
+
+                  actionType:
+                    "CONTINUE",
+
+                  createdByType:
+                    actor.type,
+
+                  createdByStaffId:
+                    actor.staffId,
+
+                  createdByName:
+                    actor.name,
 
                   lostReason:
                     null,
@@ -937,28 +1226,71 @@ export async function PUT(
               });
             }
 
-            return followUp;
+            return newRow;
           }
+        );
 
-          if (
-            requestedOutcome ===
-            "READY_FOR_POLICY"
-          ) {
-            const now =
-              new Date();
+      return NextResponse.json(
+        {
+          success:
+            true,
 
-            const followUp =
-              await tx.followUp.update({
-                where: {
-                  id,
-                },
+          message:
+            "Next follow-up saved. Previous history was preserved.",
 
+          followUp:
+            created,
+        },
+        {
+          status:
+            200,
+        }
+      );
+    }
+
+    /* ---------------------------------------------------------------------- */
+    /* READY FOR POLICY                                                       */
+    /* ---------------------------------------------------------------------- */
+
+    if (
+      requestedOutcome ===
+      "READY_FOR_POLICY"
+    ) {
+      const result =
+        await prisma.$transaction(
+          async (
+            tx
+          ) => {
+            await tx.followUp.update({
+              where: {
+                id:
+                  existing.id,
+              },
+
+              data: {
+                status:
+                  "COMPLETED",
+
+                completedAt:
+                  now,
+              },
+            });
+
+            const history =
+              await tx.followUp.create({
                 data: {
+                  userId,
+
+                  customerId:
+                    existing.customerId,
+
+                  enquiryId:
+                    existing.enquiryId,
+
                   comment,
 
                   followUpDate:
-                    followUpDate ??
-                    existing.followUpDate,
+                    actionDate,
 
                   nextFollowUpDate:
                     null,
@@ -966,14 +1298,25 @@ export async function PUT(
                   status:
                     "COMPLETED",
 
+                  /*
+                   * READY_FOR_POLICY is NOT
+                   * saved into FollowUpOutcome.
+                   */
+
                   outcome:
                     "CONTINUE",
 
-                  lostReason:
-                    null,
+                  actionType:
+                    "READY_FOR_POLICY",
 
-                  cancellationReason:
-                    null,
+                  createdByType:
+                    actor.type,
+
+                  createdByStaffId:
+                    actor.staffId,
+
+                  createdByName:
+                    actor.name,
 
                   completedAt:
                     now,
@@ -1005,28 +1348,80 @@ export async function PUT(
               });
             }
 
-            return followUp;
+            return history;
           }
+        );
 
-          if (
-            requestedOutcome ===
-            "BUSINESS_CLOSED"
-          ) {
-            const now =
-              new Date();
+      return NextResponse.json(
+        {
+          success:
+            true,
 
-            const followUp =
-              await tx.followUp.update({
-                where: {
-                  id,
-                },
+          message:
+            "Customer marked Ready for Policy.",
 
+          readyForPolicy:
+            true,
+
+          customerId:
+            existing.customerId,
+
+          enquiryId:
+            existing.enquiryId,
+
+          followUp:
+            result,
+        },
+        {
+          status:
+            200,
+        }
+      );
+    }
+
+    /* ---------------------------------------------------------------------- */
+    /* BUSINESS CLOSED                                                        */
+    /* ---------------------------------------------------------------------- */
+
+    if (
+      requestedOutcome ===
+      "BUSINESS_CLOSED"
+    ) {
+      const result =
+        await prisma.$transaction(
+          async (
+            tx
+          ) => {
+            await tx.followUp.update({
+              where: {
+                id:
+                  existing.id,
+              },
+
+              data: {
+                status:
+                  "COMPLETED",
+
+                completedAt:
+                  now,
+              },
+            });
+
+            const history =
+              await tx.followUp.create({
                 data: {
+                  userId,
+
+                  customerId:
+                    existing.customerId,
+
+                  enquiryId:
+                    existing.enquiryId,
+
                   comment,
 
                   followUpDate:
-                    followUpDate ??
-                    existing.followUpDate,
+                    actionDate,
 
                   nextFollowUpDate:
                     null,
@@ -1037,11 +1432,17 @@ export async function PUT(
                   outcome:
                     "BUSINESS_CLOSED",
 
-                  lostReason:
-                    null,
+                  actionType:
+                    "BUSINESS_CLOSED",
 
-                  cancellationReason:
-                    null,
+                  createdByType:
+                    actor.type,
+
+                  createdByStaffId:
+                    actor.staffId,
+
+                  createdByName:
+                    actor.name,
 
                   completedAt:
                     now,
@@ -1073,28 +1474,77 @@ export async function PUT(
               });
             }
 
-            return followUp;
+            return history;
           }
+        );
 
-          if (
-            requestedOutcome ===
-            "CASE_LOST"
-          ) {
-            const now =
-              new Date();
+      return NextResponse.json(
+        {
+          success:
+            true,
 
-            const followUp =
-              await tx.followUp.update({
-                where: {
-                  id,
-                },
+          message:
+            "Business converted successfully.",
 
+          customerId:
+            existing.customerId,
+
+          enquiryId:
+            existing.enquiryId,
+
+          followUp:
+            result,
+        },
+        {
+          status:
+            200,
+        }
+      );
+    }
+
+    /* ---------------------------------------------------------------------- */
+    /* CASE LOST                                                              */
+    /* ---------------------------------------------------------------------- */
+
+    if (
+      requestedOutcome ===
+      "CASE_LOST"
+    ) {
+      const result =
+        await prisma.$transaction(
+          async (
+            tx
+          ) => {
+            await tx.followUp.update({
+              where: {
+                id:
+                  existing.id,
+              },
+
+              data: {
+                status:
+                  "COMPLETED",
+
+                completedAt:
+                  now,
+              },
+            });
+
+            const history =
+              await tx.followUp.create({
                 data: {
+                  userId,
+
+                  customerId:
+                    existing.customerId,
+
+                  enquiryId:
+                    existing.enquiryId,
+
                   comment,
 
                   followUpDate:
-                    followUpDate ??
-                    existing.followUpDate,
+                    actionDate,
 
                   nextFollowUpDate:
                     null,
@@ -1105,10 +1555,19 @@ export async function PUT(
                   outcome:
                     "CASE_LOST",
 
+                  actionType:
+                    "CASE_LOST",
+
                   lostReason,
 
-                  cancellationReason:
-                    null,
+                  createdByType:
+                    actor.type,
+
+                  createdByStaffId:
+                    actor.staffId,
+
+                  createdByName:
+                    actor.name,
 
                   completedAt:
                     now,
@@ -1140,24 +1599,67 @@ export async function PUT(
               });
             }
 
-            return followUp;
+            return history;
           }
+        );
 
-          const now =
-            new Date();
+      return NextResponse.json(
+        {
+          success:
+            true,
 
-          const followUp =
-            await tx.followUp.update({
-              where: {
-                id,
-              },
+          message:
+            "Case marked as lost.",
 
+          followUp:
+            result,
+        },
+        {
+          status:
+            200,
+        }
+      );
+    }
+
+    /* ---------------------------------------------------------------------- */
+    /* CANCEL                                                                 */
+    /* ---------------------------------------------------------------------- */
+
+    const result =
+      await prisma.$transaction(
+        async (
+          tx
+        ) => {
+          await tx.followUp.update({
+            where: {
+              id:
+                existing.id,
+            },
+
+            data: {
+              status:
+                "COMPLETED",
+
+              completedAt:
+                now,
+            },
+          });
+
+          const history =
+            await tx.followUp.create({
               data: {
+                userId,
+
+                customerId:
+                  existing.customerId,
+
+                enquiryId:
+                  existing.enquiryId,
+
                 comment,
 
                 followUpDate:
-                  followUpDate ??
-                  existing.followUpDate,
+                  actionDate,
 
                 nextFollowUpDate:
                   null,
@@ -1168,10 +1670,19 @@ export async function PUT(
                 outcome:
                   "CANCELLED",
 
-                lostReason:
-                  null,
+                actionType:
+                  "CANCELLED",
 
                 cancellationReason,
+
+                createdByType:
+                  actor.type,
+
+                createdByStaffId:
+                  actor.staffId,
+
+                createdByName:
+                  actor.name,
 
                 completedAt:
                   now,
@@ -1203,74 +1714,24 @@ export async function PUT(
             });
           }
 
-          return followUp;
+          return history;
         }
       );
 
-    /* MESSAGE */
-
-    let message =
-      "Follow-up updated successfully.";
-
-    if (
-      requestedOutcome ===
-      "CONTINUE"
-    ) {
-      message =
-        "Next follow-up scheduled successfully.";
-    }
-
-    if (
-      requestedOutcome ===
-      "READY_FOR_POLICY"
-    ) {
-      message =
-        "Customer marked Ready for Policy. You can now create the policy.";
-    }
-
-    if (
-      requestedOutcome ===
-      "BUSINESS_CLOSED"
-    ) {
-      message =
-        "Policy/business marked converted successfully.";
-    }
-
-    if (
-      requestedOutcome ===
-      "CASE_LOST"
-    ) {
-      message =
-        "Case marked as lost successfully.";
-    }
-
-    if (
-      requestedOutcome ===
-      "CANCELLED"
-    ) {
-      message =
-        "Enquiry cancelled successfully.";
-    }
-
     return NextResponse.json(
       {
-        success: true,
+        success:
+          true,
 
-        message,
+        message:
+          "Enquiry cancelled successfully.",
 
         followUp:
-          updated,
-
-        readyForPolicy,
-
-        customerId:
-          existing.customerId,
-
-        enquiryId:
-          existing.enquiryId,
+          result,
       },
       {
-        status: 200,
+        status:
+          200,
       }
     );
   } catch (error) {
@@ -1281,19 +1742,22 @@ export async function PUT(
 
     return NextResponse.json(
       {
-        success: false,
+        success:
+          false,
+
         message:
           "Unable to update follow-up.",
       },
       {
-        status: 500,
+        status:
+          500,
       }
     );
   }
 }
 
 /* -------------------------------------------------------------------------- */
-/* DELETE FOLLOW-UP                                                           */
+/* DELETE                                                                     */
 /* -------------------------------------------------------------------------- */
 
 export async function DELETE(
@@ -1309,81 +1773,38 @@ export async function DELETE(
 
     const id =
       searchParams
-        .get("id")
-        ?.trim() || "";
+        .get(
+          "id"
+        )
+        ?.trim() ||
+      "";
 
     const userId =
       searchParams
-        .get("userId")
-        ?.trim() || "";
+        .get(
+          "userId"
+        )
+        ?.trim() ||
+      "";
 
-    if (!id) {
+    if (
+      !id ||
+      !userId
+    ) {
       return NextResponse.json(
         {
-          success: false,
+          success:
+            false,
+
           message:
-            "Follow-up ID is required.",
+            "Follow-up ID and User ID are required.",
         },
         {
-          status: 400,
+          status:
+            400,
         }
       );
     }
-
-    if (!userId) {
-      return NextResponse.json(
-        {
-          success: false,
-          message:
-            "User ID is required.",
-        },
-        {
-          status: 400,
-        }
-      );
-    }
-
-    /* USER */
-
-    const user =
-      await prisma.user.findUnique({
-        where: {
-          id: userId,
-        },
-
-        select: {
-          id: true,
-          isActive: true,
-        },
-      });
-
-    if (!user) {
-      return NextResponse.json(
-        {
-          success: false,
-          message:
-            "Agent account not found.",
-        },
-        {
-          status: 404,
-        }
-      );
-    }
-
-    if (!user.isActive) {
-      return NextResponse.json(
-        {
-          success: false,
-          message:
-            "Agent account is inactive.",
-        },
-        {
-          status: 403,
-        }
-      );
-    }
-
-    /* FOLLOW-UP */
 
     const existing =
       await prisma.followUp.findFirst({
@@ -1394,27 +1815,31 @@ export async function DELETE(
 
         select: {
           id: true,
-          enquiryId: true,
+          enquiryId:
+            true,
         },
       });
 
     if (!existing) {
       return NextResponse.json(
         {
-          success: false,
+          success:
+            false,
+
           message:
             "Follow-up not found.",
         },
         {
-          status: 404,
+          status:
+            404,
         }
       );
     }
 
-    /* DELETE */
-
     await prisma.$transaction(
-      async (tx) => {
+      async (
+        tx
+      ) => {
         await tx.followUp.delete({
           where: {
             id,
@@ -1424,7 +1849,7 @@ export async function DELETE(
         if (
           existing.enquiryId
         ) {
-          const latest =
+          const latestPending =
             await tx.followUp.findFirst({
               where: {
                 enquiryId:
@@ -1436,20 +1861,24 @@ export async function DELETE(
                   "PENDING",
               },
 
-              orderBy: [
-                {
-                  followUpDate:
-                    "desc",
-                },
-                {
-                  createdAt:
-                    "desc",
-                },
-              ],
+              orderBy: {
+                createdAt:
+                  "desc",
+              },
 
               select: {
                 nextFollowUpDate:
                   true,
+              },
+            });
+
+          const remaining =
+            await tx.followUp.count({
+              where: {
+                enquiryId:
+                  existing.enquiryId,
+
+                userId,
               },
             });
 
@@ -1461,9 +1890,16 @@ export async function DELETE(
 
             data: {
               nextFollowUpDate:
-                latest
-                  ?.nextFollowUpDate ??
+                latestPending?.nextFollowUpDate ??
                 null,
+
+              ...(remaining ===
+              0
+                ? {
+                    status:
+                      "NEW",
+                  }
+                : {}),
             },
           });
         }
@@ -1472,12 +1908,15 @@ export async function DELETE(
 
     return NextResponse.json(
       {
-        success: true,
+        success:
+          true,
+
         message:
           "Follow-up deleted successfully.",
       },
       {
-        status: 200,
+        status:
+          200,
       }
     );
   } catch (error) {
@@ -1488,12 +1927,15 @@ export async function DELETE(
 
     return NextResponse.json(
       {
-        success: false,
+        success:
+          false,
+
         message:
           "Unable to delete follow-up.",
       },
       {
-        status: 500,
+        status:
+          500,
       }
     );
   }

@@ -61,20 +61,100 @@ textarea::placeholder {
 }
 
 /* -------------------------------------------------------------------------- */
-/* SAFETY FOR LIGHT ADMIN / AGENT CARDS                                       */
-/* -------------------------------------------------------------------------- */
-
-.bg-white {
-  color: #0f172a;
-}
-
-/* -------------------------------------------------------------------------- */
 /* LINKS                                                                      */
 /* -------------------------------------------------------------------------- */
 
 a {
-  color: inherit;
   text-decoration: none;
+}
+
+/* -------------------------------------------------------------------------- */
+/* LIGHT BACKGROUNDS                                                         */
+/* -------------------------------------------------------------------------- */
+
+/*
+ * Keep normal readable dark text on light cards.
+ *
+ * IMPORTANT:
+ * Do not force this on buttons or links,
+ * because Tailwind text-white must be allowed
+ * to work on dark buttons.
+ */
+
+div.bg-white,
+section.bg-white,
+article.bg-white,
+main.bg-white {
+  color: #0f172a;
+}
+
+/* -------------------------------------------------------------------------- */
+/* DARK BUTTON / LINK TEXT SAFETY                                              */
+/* -------------------------------------------------------------------------- */
+
+/*
+ * These rules protect all dark Tailwind buttons and links.
+ *
+ * This fixes cases where a global inherited dark text color
+ * makes text unreadable on a dark background.
+ */
+
+button.bg-black,
+a.bg-black,
+button.bg-gray-900,
+a.bg-gray-900,
+button.bg-slate-900,
+a.bg-slate-900,
+button.bg-gray-800,
+a.bg-gray-800,
+button.bg-slate-800,
+a.bg-slate-800 {
+  color: #ffffff !important;
+}
+
+button.bg-blue-600,
+a.bg-blue-600,
+button.bg-blue-700,
+a.bg-blue-700,
+button.bg-blue-800,
+a.bg-blue-800 {
+  color: #ffffff !important;
+}
+
+button.bg-green-600,
+a.bg-green-600,
+button.bg-green-700,
+a.bg-green-700,
+button.bg-emerald-600,
+a.bg-emerald-600,
+button.bg-emerald-700,
+a.bg-emerald-700 {
+  color: #ffffff !important;
+}
+
+button.bg-red-600,
+a.bg-red-600,
+button.bg-red-700,
+a.bg-red-700 {
+  color: #ffffff !important;
+}
+
+button.bg-orange-600,
+a.bg-orange-600,
+button.bg-orange-700,
+a.bg-orange-700 {
+  color: #ffffff !important;
+}
+
+button.bg-violet-600,
+a.bg-violet-600,
+button.bg-violet-700,
+a.bg-violet-700,
+button.bg-purple-600,
+a.bg-purple-600,
+button.bg-purple-700,
+a.bg-purple-700 {
+  color: #ffffff !important;
 }
 
 /* -------------------------------------------------------------------------- */
@@ -87,4 +167,24 @@ button {
 
 button:disabled {
   cursor: not-allowed;
+}
+
+/* -------------------------------------------------------------------------- */
+/* ACCESSIBILITY                                                              */
+/* -------------------------------------------------------------------------- */
+
+button,
+a,
+input,
+select,
+textarea {
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* -------------------------------------------------------------------------- */
+/* MOBILE                                                                     */
+/* -------------------------------------------------------------------------- */
+
+html {
+  -webkit-text-size-adjust: 100%;
 }

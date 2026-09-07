@@ -204,6 +204,16 @@ export async function GET(
         .get("subAgentId")
         ?.trim() || "";
 
+    const originStaffId =
+      searchParams
+        .get("originStaffId")
+        ?.trim() || "";
+
+    const originSupervisorId =
+      searchParams
+        .get("originSupervisorId")
+        ?.trim() || "";
+
     const consultantId =
       searchParams
         .get("consultantId")
@@ -475,6 +485,18 @@ export async function GET(
           ...(subAgentId
             ? {
                 subAgentId,
+              }
+            : {}),
+
+          ...(originStaffId
+            ? {
+                originStaffId,
+              }
+            : {}),
+
+          ...(originSupervisorId
+            ? {
+                originSupervisorId,
               }
             : {}),
 
@@ -1248,6 +1270,78 @@ export async function POST(
     }
 
     /* ---------------------------------------------------------------------- */
+    /* STAFF / SUPERVISOR ORIGIN                                              */
+    /* ---------------------------------------------------------------------- */
+    /*
+     * For Sub-Agent business, preserve the Staff relationship that existed
+     * when the policy was created.
+     *
+     * Later Sub-Agent transfers must not rewrite historical production.
+     */
+
+    let originStaffId:
+      | string
+      | null = null;
+
+    let originSupervisorId:
+      | string
+      | null = null;
+
+    if (subAgentId) {
+      const sourceSubAgent =
+        await prisma.subAgent.findFirst({
+          where: {
+            id: subAgentId,
+            userId,
+          },
+
+          select: {
+            id: true,
+            assignedStaffId: true,
+
+            assignedStaff: {
+              select: {
+                id: true,
+                staffRole: true,
+                supervisorId: true,
+              },
+            },
+          },
+        });
+
+      if (!sourceSubAgent) {
+        return NextResponse.json(
+          {
+            success: false,
+            message:
+              "Linked Sub-Agent was not found under this Agent.",
+          },
+          {
+            status: 404,
+          }
+        );
+      }
+
+      originStaffId =
+        sourceSubAgent.assignedStaffId ||
+        null;
+
+      if (
+        sourceSubAgent.assignedStaff
+          ?.staffRole ===
+        "SUPERVISOR"
+      ) {
+        originSupervisorId =
+          sourceSubAgent.assignedStaff.id;
+      } else {
+        originSupervisorId =
+          sourceSubAgent.assignedStaff
+            ?.supervisorId ||
+          null;
+      }
+    }
+
+    /* ---------------------------------------------------------------------- */
     /* CHECK CONSULTANT                                                       */
     /* ---------------------------------------------------------------------- */
 
@@ -1861,6 +1955,13 @@ export async function POST(
 
       customerSource,
       subAgentId,
+
+      /*
+       * Historical production attribution.
+       * These values are snapshots at policy creation time.
+       */
+      originStaffId,
+      originSupervisorId,
 
       placementSource,
       consultantId:

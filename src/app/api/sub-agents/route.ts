@@ -9,9 +9,7 @@ import prisma from "@/lib/prisma";
 /* HELPERS                                                                    */
 /* -------------------------------------------------------------------------- */
 
-function cleanPhone(
-  value: unknown
-): string | null {
+function cleanPhone(value: unknown): string | null {
   if (
     value === undefined ||
     value === null ||
@@ -20,17 +18,14 @@ function cleanPhone(
     return null;
   }
 
-  const phone =
-    String(value)
-      .replace(/\D/g, "")
-      .slice(-10);
+  const phone = String(value)
+    .replace(/\D/g, "")
+    .slice(-10);
 
   return phone || null;
 }
 
-function cleanPhonePrefix(
-  value: unknown
-): string {
+function cleanPhonePrefix(value: unknown): string {
   return String(value || "")
     .replace(/\D/g, "")
     .slice(0, 10);
@@ -46,10 +41,157 @@ function cleanOptionalText(
     return null;
   }
 
-  const text =
-    String(value).trim();
+  const text = String(value).trim();
 
   return text || null;
+}
+
+function cleanId(
+  value: unknown
+): string | null {
+  if (
+    value === undefined ||
+    value === null
+  ) {
+    return null;
+  }
+
+  const text = String(value).trim();
+
+  return text || null;
+}
+
+/* -------------------------------------------------------------------------- */
+/* MAIN AGENT                                                                 */
+/* -------------------------------------------------------------------------- */
+
+async function getMainAgent(
+  userId: string
+) {
+  const user =
+    await prisma.user.findUnique({
+      where: {
+        id: userId,
+      },
+
+      select: {
+        id: true,
+        name: true,
+        role: true,
+        isActive: true,
+      },
+    });
+
+  if (!user) {
+    return {
+      ok: false as const,
+
+      response:
+        NextResponse.json(
+          {
+            success: false,
+            message:
+              "Agent account not found.",
+          },
+          {
+            status: 404,
+          }
+        ),
+    };
+  }
+
+  if (!user.isActive) {
+    return {
+      ok: false as const,
+
+      response:
+        NextResponse.json(
+          {
+            success: false,
+            message:
+              "Agent account is inactive.",
+          },
+          {
+            status: 403,
+          }
+        ),
+    };
+  }
+
+  return {
+    ok: true as const,
+    user,
+  };
+}
+
+/* -------------------------------------------------------------------------- */
+/* STAFF VALIDATION                                                           */
+/* -------------------------------------------------------------------------- */
+
+async function validateAssignedStaff(
+  userId: string,
+  staffId: string
+) {
+  const staff =
+    await prisma.staff.findFirst({
+      where: {
+        id: staffId,
+        userId,
+      },
+
+      select: {
+        id: true,
+        userId: true,
+        staffCode: true,
+        name: true,
+        staffRole: true,
+        designation: true,
+        department: true,
+        isActive: true,
+        loginEnabled: true,
+      },
+    });
+
+  if (!staff) {
+    return {
+      ok: false as const,
+
+      response:
+        NextResponse.json(
+          {
+            success: false,
+            message:
+              "Selected Staff member was not found under this Agent.",
+          },
+          {
+            status: 404,
+          }
+        ),
+    };
+  }
+
+  if (!staff.isActive) {
+    return {
+      ok: false as const,
+
+      response:
+        NextResponse.json(
+          {
+            success: false,
+            message:
+              "Selected Staff member is inactive.",
+          },
+          {
+            status: 400,
+          }
+        ),
+    };
+  }
+
+  return {
+    ok: true as const,
+    staff,
+  };
 }
 
 /* -------------------------------------------------------------------------- */
@@ -99,6 +241,105 @@ async function generateSubAgentCode(
 }
 
 /* -------------------------------------------------------------------------- */
+/* COMMON SELECTS                                                             */
+/* -------------------------------------------------------------------------- */
+
+const assignedStaffSelect = {
+  id: true,
+  staffCode: true,
+  name: true,
+  staffRole: true,
+  designation: true,
+  department: true,
+  isActive: true,
+} as const;
+
+const subAgentListSelect = {
+  id: true,
+  userId: true,
+
+  code: true,
+  name: true,
+
+  phone: true,
+  whatsapp: true,
+  email: true,
+
+  address: true,
+  district: true,
+  state: true,
+  pincode: true,
+
+  notes: true,
+
+  isActive: true,
+  inactiveReason: true,
+  inactiveAt: true,
+
+  assignedStaffId: true,
+
+  assignedStaff: {
+    select:
+      assignedStaffSelect,
+  },
+
+  createdAt: true,
+  updatedAt: true,
+
+  _count: {
+    select: {
+      customers: true,
+      policies: true,
+    },
+  },
+} as const;
+
+const assignmentHistorySelect = {
+  id: true,
+
+  subAgentId: true,
+  ownerUserId: true,
+
+  fromStaffId: true,
+  toStaffId: true,
+
+  changedByType: true,
+  changedByUserId: true,
+  changedByStaffId: true,
+  changedByName: true,
+
+  reason: true,
+  createdAt: true,
+
+  fromStaff: {
+    select: {
+      id: true,
+      staffCode: true,
+      name: true,
+      staffRole: true,
+    },
+  },
+
+  toStaff: {
+    select: {
+      id: true,
+      staffCode: true,
+      name: true,
+      staffRole: true,
+    },
+  },
+
+  changedByStaff: {
+    select: {
+      id: true,
+      staffCode: true,
+      name: true,
+      staffRole: true,
+    },
+  },
+} as const;
+
+/* -------------------------------------------------------------------------- */
 /* GET SUB-AGENTS                                                             */
 /* -------------------------------------------------------------------------- */
 
@@ -106,12 +347,8 @@ export async function GET(
   request: NextRequest
 ) {
   try {
-    const {
-      searchParams,
-    } =
-      new URL(
-        request.url
-      );
+    const { searchParams } =
+      new URL(request.url);
 
     const userId =
       searchParams
@@ -145,6 +382,21 @@ export async function GET(
         "activeOnly"
       ) !== "false";
 
+    const assignedStaffId =
+      searchParams
+        .get("assignedStaffId")
+        ?.trim() || "";
+
+    const agentDirectOnly =
+      searchParams.get(
+        "agentDirectOnly"
+      ) === "true";
+
+    const includeHistory =
+      searchParams.get(
+        "includeHistory"
+      ) !== "false";
+
     /* ---------------------------------------------------------------------- */
     /* USER REQUIRED                                                          */
     /* ---------------------------------------------------------------------- */
@@ -162,46 +414,13 @@ export async function GET(
       );
     }
 
-    /* ---------------------------------------------------------------------- */
-    /* CHECK MAIN AGENT                                                       */
-    /* ---------------------------------------------------------------------- */
-
-    const user =
-      await prisma.user.findUnique({
-        where: {
-          id: userId,
-        },
-
-        select: {
-          id: true,
-          isActive: true,
-        },
-      });
-
-    if (!user) {
-      return NextResponse.json(
-        {
-          success: false,
-          message:
-            "Agent account not found.",
-        },
-        {
-          status: 404,
-        }
+    const userCheck =
+      await getMainAgent(
+        userId
       );
-    }
 
-    if (!user.isActive) {
-      return NextResponse.json(
-        {
-          success: false,
-          message:
-            "Agent account is inactive.",
-        },
-        {
-          status: 403,
-        }
-      );
+    if (!userCheck.ok) {
+      return userCheck.response;
     }
 
     /* ---------------------------------------------------------------------- */
@@ -213,46 +432,11 @@ export async function GET(
         await prisma.subAgent.findFirst({
           where: {
             id: subAgentId,
-
-            /*
-             * IMPORTANT
-             *
-             * Only allow this main Agent
-             * to access his own Sub-Agent.
-             */
-
             userId,
           },
 
-          select: {
-            id: true,
-            userId: true,
-
-            code: true,
-            name: true,
-
-            phone: true,
-            whatsapp: true,
-            email: true,
-
-            address: true,
-            district: true,
-            state: true,
-            pincode: true,
-
-            notes: true,
-
-            isActive: true,
-
-            createdAt: true,
-            updatedAt: true,
-
-            _count: {
-              select: {
-                customers: true,
-              },
-            },
-          },
+          select:
+            subAgentListSelect,
         });
 
       if (!subAgent) {
@@ -268,10 +452,41 @@ export async function GET(
         );
       }
 
+      const assignmentHistory =
+        includeHistory
+          ? await prisma.subAgentAssignmentHistory.findMany({
+              where: {
+                subAgentId:
+                  subAgent.id,
+
+                ownerUserId:
+                  userId,
+              },
+
+              select:
+                assignmentHistorySelect,
+
+              orderBy: {
+                createdAt:
+                  "desc",
+              },
+            })
+          : [];
+
       return NextResponse.json(
         {
           success: true,
-          subAgent,
+
+          subAgent: {
+            ...subAgent,
+
+            assignmentType:
+              subAgent.assignedStaffId
+                ? "STAFF"
+                : "AGENT_DIRECT",
+
+            assignmentHistory,
+          },
         },
         {
           status: 200,
@@ -295,15 +510,11 @@ export async function GET(
         return NextResponse.json(
           {
             success: true,
-
             subAgents: [],
-
             exactNameMatch:
               false,
-
             exactPhoneMatch:
               false,
-
             count: 0,
           },
           {
@@ -320,15 +531,11 @@ export async function GET(
         return NextResponse.json(
           {
             success: true,
-
             subAgents: [],
-
             exactNameMatch:
               false,
-
             exactPhoneMatch:
               false,
-
             count: 0,
           },
           {
@@ -340,19 +547,24 @@ export async function GET(
       const subAgents =
         await prisma.subAgent.findMany({
           where: {
-            /*
-             * IMPORTANT
-             *
-             * Search only this Agent's
-             * own Sub-Agents.
-             */
-
             userId,
 
             ...(activeOnly
               ? {
-                  isActive:
-                    true,
+                  isActive: true,
+                }
+              : {}),
+
+            ...(assignedStaffId
+              ? {
+                  assignedStaffId,
+                }
+              : {}),
+
+            ...(agentDirectOnly
+              ? {
+                  assignedStaffId:
+                    null,
                 }
               : {}),
 
@@ -364,19 +576,16 @@ export async function GET(
                       name: {
                         contains:
                           namePrefix,
-
                         mode:
                           "insensitive",
                       },
                     },
-
                     {
                       phone: {
                         startsWith:
                           phonePrefix,
                       },
                     },
-
                     {
                       whatsapp: {
                         startsWith:
@@ -390,7 +599,6 @@ export async function GET(
                   name: {
                     contains:
                       namePrefix,
-
                     mode:
                       "insensitive",
                   },
@@ -404,7 +612,6 @@ export async function GET(
                           phonePrefix,
                       },
                     },
-
                     {
                       whatsapp: {
                         startsWith:
@@ -416,42 +623,14 @@ export async function GET(
               : {}),
           },
 
-          select: {
-            id: true,
-            userId: true,
-
-            code: true,
-            name: true,
-
-            phone: true,
-            whatsapp: true,
-            email: true,
-
-            address: true,
-            district: true,
-            state: true,
-            pincode: true,
-
-            notes: true,
-
-            isActive: true,
-
-            createdAt: true,
-            updatedAt: true,
-
-            _count: {
-              select: {
-                customers: true,
-              },
-            },
-          },
+          select:
+            subAgentListSelect,
 
           orderBy: [
             {
               isActive:
                 "desc",
             },
-
             {
               name:
                 "asc",
@@ -471,9 +650,7 @@ export async function GET(
           normalizedName
         ) &&
         subAgents.some(
-          (
-            subAgent
-          ) =>
+          (subAgent) =>
             subAgent.name
               .trim()
               .toLowerCase() ===
@@ -484,9 +661,7 @@ export async function GET(
         phonePrefix.length ===
           10 &&
         subAgents.some(
-          (
-            subAgent
-          ) =>
+          (subAgent) =>
             subAgent.phone ===
               phonePrefix ||
             subAgent.whatsapp ===
@@ -497,10 +672,19 @@ export async function GET(
         {
           success: true,
 
-          subAgents,
+          subAgents:
+            subAgents.map(
+              (subAgent) => ({
+                ...subAgent,
+
+                assignmentType:
+                  subAgent.assignedStaffId
+                    ? "STAFF"
+                    : "AGENT_DIRECT",
+              })
+            ),
 
           exactNameMatch,
-
           exactPhoneMatch,
 
           count:
@@ -519,19 +703,24 @@ export async function GET(
     const subAgents =
       await prisma.subAgent.findMany({
         where: {
-          /*
-           * IMPORTANT
-           *
-           * Only Sub-Agents belonging
-           * to this main Agent.
-           */
-
           userId,
 
           ...(activeOnly
             ? {
-                isActive:
-                  true,
+                isActive: true,
+              }
+            : {}),
+
+          ...(assignedStaffId
+            ? {
+                assignedStaffId,
+              }
+            : {}),
+
+          ...(agentDirectOnly
+            ? {
+                assignedStaffId:
+                  null,
               }
             : {}),
 
@@ -542,43 +731,48 @@ export async function GET(
                     code: {
                       contains:
                         search,
-
                       mode:
                         "insensitive",
                     },
                   },
-
                   {
                     name: {
                       contains:
                         search,
-
                       mode:
                         "insensitive",
                     },
                   },
-
                   {
                     phone: {
                       contains:
                         search,
                     },
                   },
-
                   {
                     whatsapp: {
                       contains:
                         search,
                     },
                   },
-
                   {
                     email: {
                       contains:
                         search,
-
                       mode:
                         "insensitive",
+                    },
+                  },
+                  {
+                    assignedStaff: {
+                      is: {
+                        name: {
+                          contains:
+                            search,
+                          mode:
+                            "insensitive",
+                        },
+                      },
                     },
                   },
                 ],
@@ -586,42 +780,14 @@ export async function GET(
             : {}),
         },
 
-        select: {
-          id: true,
-          userId: true,
-
-          code: true,
-          name: true,
-
-          phone: true,
-          whatsapp: true,
-          email: true,
-
-          address: true,
-          district: true,
-          state: true,
-          pincode: true,
-
-          notes: true,
-
-          isActive: true,
-
-          createdAt: true,
-          updatedAt: true,
-
-          _count: {
-            select: {
-              customers: true,
-            },
-          },
-        },
+        select:
+          subAgentListSelect,
 
         orderBy: [
           {
             isActive:
               "desc",
           },
-
           {
             name:
               "asc",
@@ -633,10 +799,34 @@ export async function GET(
       {
         success: true,
 
-        subAgents,
+        subAgents:
+          subAgents.map(
+            (subAgent) => ({
+              ...subAgent,
+
+              assignmentType:
+                subAgent.assignedStaffId
+                  ? "STAFF"
+                  : "AGENT_DIRECT",
+            })
+          ),
 
         count:
           subAgents.length,
+
+        assignedToStaffCount:
+          subAgents.filter(
+            (item) =>
+              Boolean(
+                item.assignedStaffId
+              )
+          ).length,
+
+        agentDirectCount:
+          subAgents.filter(
+            (item) =>
+              !item.assignedStaffId
+          ).length,
       },
       {
         status: 200,
@@ -651,7 +841,6 @@ export async function GET(
     return NextResponse.json(
       {
         success: false,
-
         message:
           "Unable to load Sub-Agents.",
       },
@@ -737,6 +926,11 @@ export async function POST(
         body.notes
       );
 
+    const assignedStaffId =
+      cleanId(
+        body.assignedStaffId
+      );
+
     /* ---------------------------------------------------------------------- */
     /* MAIN AGENT REQUIRED                                                    */
     /* ---------------------------------------------------------------------- */
@@ -745,7 +939,6 @@ export async function POST(
       return NextResponse.json(
         {
           success: false,
-
           message:
             "User ID is required.",
         },
@@ -755,52 +948,20 @@ export async function POST(
       );
     }
 
-    /* ---------------------------------------------------------------------- */
-    /* CHECK MAIN AGENT                                                       */
-    /* ---------------------------------------------------------------------- */
-
-    const user =
-      await prisma.user.findUnique({
-        where: {
-          id: userId,
-        },
-
-        select: {
-          id: true,
-          isActive: true,
-        },
-      });
-
-    if (!user) {
-      return NextResponse.json(
-        {
-          success: false,
-
-          message:
-            "Agent account not found.",
-        },
-        {
-          status: 404,
-        }
+    const userCheck =
+      await getMainAgent(
+        userId
       );
+
+    if (!userCheck.ok) {
+      return userCheck.response;
     }
 
-    if (!user.isActive) {
-      return NextResponse.json(
-        {
-          success: false,
-
-          message:
-            "Agent account is inactive.",
-        },
-        {
-          status: 403,
-        }
-      );
-    }
+    const mainAgent =
+      userCheck.user;
 
     /* ---------------------------------------------------------------------- */
-    /* NAME                                                                   */
+    /* VALIDATION                                                             */
     /* ---------------------------------------------------------------------- */
 
     if (
@@ -810,7 +971,6 @@ export async function POST(
       return NextResponse.json(
         {
           success: false,
-
           message:
             "Please enter a valid Sub-Agent name.",
         },
@@ -820,15 +980,10 @@ export async function POST(
       );
     }
 
-    /* ---------------------------------------------------------------------- */
-    /* MOBILE MANDATORY                                                       */
-    /* ---------------------------------------------------------------------- */
-
     if (!phone) {
       return NextResponse.json(
         {
           success: false,
-
           message:
             "Sub-Agent mobile number is mandatory.",
         },
@@ -846,7 +1001,6 @@ export async function POST(
       return NextResponse.json(
         {
           success: false,
-
           message:
             "Please enter a valid 10 digit mobile number.",
         },
@@ -855,10 +1009,6 @@ export async function POST(
         }
       );
     }
-
-    /* ---------------------------------------------------------------------- */
-    /* WHATSAPP                                                               */
-    /* ---------------------------------------------------------------------- */
 
     if (!whatsapp) {
       whatsapp =
@@ -873,7 +1023,6 @@ export async function POST(
       return NextResponse.json(
         {
           success: false,
-
           message:
             "Please enter a valid 10 digit WhatsApp number.",
         },
@@ -882,10 +1031,6 @@ export async function POST(
         }
       );
     }
-
-    /* ---------------------------------------------------------------------- */
-    /* EMAIL                                                                  */
-    /* ---------------------------------------------------------------------- */
 
     if (
       email &&
@@ -896,7 +1041,6 @@ export async function POST(
       return NextResponse.json(
         {
           success: false,
-
           message:
             "Please enter a valid email address.",
         },
@@ -905,10 +1049,6 @@ export async function POST(
         }
       );
     }
-
-    /* ---------------------------------------------------------------------- */
-    /* PINCODE                                                                */
-    /* ---------------------------------------------------------------------- */
 
     if (
       pincode &&
@@ -919,7 +1059,6 @@ export async function POST(
       return NextResponse.json(
         {
           success: false,
-
           message:
             "Please enter a valid 6 digit pincode.",
         },
@@ -929,24 +1068,47 @@ export async function POST(
       );
     }
 
+    let assignedStaff:
+      | {
+          id: string;
+          staffCode: string;
+          name: string;
+          staffRole: string;
+        }
+      | null =
+      null;
+
+    if (assignedStaffId) {
+      const staffCheck =
+        await validateAssignedStaff(
+          userId,
+          assignedStaffId
+        );
+
+      if (!staffCheck.ok) {
+        return staffCheck.response;
+      }
+
+      assignedStaff = {
+        id:
+          staffCheck.staff.id,
+
+        staffCode:
+          staffCheck.staff.staffCode,
+
+        name:
+          staffCheck.staff.name,
+
+        staffRole:
+          String(
+            staffCheck.staff.staffRole
+          ),
+      };
+    }
+
     /* ---------------------------------------------------------------------- */
-    /* DUPLICATE MOBILE                                                       */
+    /* DUPLICATES                                                             */
     /* ---------------------------------------------------------------------- */
-    /*
-     * IMPORTANT:
-     *
-     * userId is included here.
-     *
-     * This means:
-     *
-     * Agent A can have Ravi 9876543210
-     * Agent B can also have Ravi 9876543210
-     *
-     * No conflict.
-     *
-     * Only duplicates inside the SAME
-     * main Agent account are blocked.
-     */
 
     const duplicatePhone =
       await prisma.subAgent.findFirst({
@@ -957,7 +1119,6 @@ export async function POST(
             {
               phone,
             },
-
             {
               whatsapp:
                 phone,
@@ -967,15 +1128,10 @@ export async function POST(
 
         select: {
           id: true,
-
           code: true,
-
           name: true,
-
           phone: true,
-
           whatsapp: true,
-
           email: true,
         },
       });
@@ -986,9 +1142,7 @@ export async function POST(
       return NextResponse.json(
         {
           success: false,
-
-          duplicate:
-            true,
+          duplicate: true,
 
           message:
             `This mobile number is already linked to Sub-Agent ${duplicatePhone.code} - ${duplicatePhone.name} under this Agent.`,
@@ -1002,15 +1156,6 @@ export async function POST(
       );
     }
 
-    /* ---------------------------------------------------------------------- */
-    /* DUPLICATE NAME                                                         */
-    /* ---------------------------------------------------------------------- */
-    /*
-     * Same rule:
-     * duplicate name is checked only
-     * inside the SAME Agent.
-     */
-
     const duplicateName =
       await prisma.subAgent.findFirst({
         where: {
@@ -1019,7 +1164,6 @@ export async function POST(
           name: {
             equals:
               name,
-
             mode:
               "insensitive",
           },
@@ -1027,15 +1171,10 @@ export async function POST(
 
         select: {
           id: true,
-
           code: true,
-
           name: true,
-
           phone: true,
-
           whatsapp: true,
-
           email: true,
         },
       });
@@ -1046,9 +1185,7 @@ export async function POST(
       return NextResponse.json(
         {
           success: false,
-
-          duplicate:
-            true,
+          duplicate: true,
 
           message:
             `A Sub-Agent named ${duplicateName.name} already exists as ${duplicateName.code} under this Agent.`,
@@ -1063,7 +1200,7 @@ export async function POST(
     }
 
     /* ---------------------------------------------------------------------- */
-    /* GENERATE CODE                                                          */
+    /* CREATE                                                                 */
     /* ---------------------------------------------------------------------- */
 
     const code =
@@ -1071,80 +1208,103 @@ export async function POST(
         userId
       );
 
-    /* ---------------------------------------------------------------------- */
-    /* CREATE                                                                 */
-    /* ---------------------------------------------------------------------- */
-
     const subAgent =
-      await prisma.subAgent.create({
-        data: {
-          userId,
+      await prisma.$transaction(
+        async (tx) => {
+          const created =
+            await tx.subAgent.create({
+              data: {
+                userId,
 
-          code,
+                code,
+                name,
 
-          name,
+                phone,
+                whatsapp,
+                email,
 
-          phone,
+                address,
+                district,
+                state,
+                pincode,
 
-          whatsapp,
+                notes,
 
-          email,
+                assignedStaffId,
 
-          address,
+                isActive:
+                  true,
+              },
 
-          district,
+              select:
+                subAgentListSelect,
+            });
 
-          state,
+          /*
+           * Only create an assignment-history row when the
+           * Sub-Agent is initially assigned to Staff.
+           *
+           * Agent Direct is the default relationship and does
+           * not require an artificial transfer record.
+           */
 
-          pincode,
+          if (
+            assignedStaffId &&
+            assignedStaff
+          ) {
+            await tx.subAgentAssignmentHistory.create({
+              data: {
+                subAgentId:
+                  created.id,
 
-          notes,
+                ownerUserId:
+                  userId,
 
-          isActive:
-            true,
-        },
+                fromStaffId:
+                  null,
 
-        select: {
-          id: true,
+                toStaffId:
+                  assignedStaffId,
 
-          userId: true,
+                changedByType:
+                  "AGENT",
 
-          code: true,
+                changedByUserId:
+                  userId,
 
-          name: true,
+                changedByStaffId:
+                  null,
 
-          phone: true,
+                changedByName:
+                  mainAgent.name,
 
-          whatsapp: true,
+                reason:
+                  `Initial assignment to ${assignedStaff.staffCode} - ${assignedStaff.name}`,
+              },
+            });
+          }
 
-          email: true,
-
-          address: true,
-
-          district: true,
-
-          state: true,
-
-          pincode: true,
-
-          notes: true,
-
-          isActive: true,
-
-          createdAt: true,
-
-          updatedAt: true,
-        },
-      });
+          return created;
+        }
+      );
 
     return NextResponse.json(
       {
         success: true,
 
         message:
-          `Sub-Agent ${code} created successfully.`,
+          assignedStaff
+            ? `Sub-Agent ${code} created and assigned to ${assignedStaff.name}.`
+            : `Sub-Agent ${code} created successfully.`,
 
-        subAgent,
+        subAgent: {
+          ...subAgent,
+
+          assignmentType:
+            subAgent.assignedStaffId
+              ? "STAFF"
+              : "AGENT_DIRECT",
+        },
       },
       {
         status: 201,
@@ -1159,7 +1319,6 @@ export async function POST(
     return NextResponse.json(
       {
         success: false,
-
         message:
           "Unable to create Sub-Agent.",
       },
@@ -1171,7 +1330,7 @@ export async function POST(
 }
 
 /* -------------------------------------------------------------------------- */
-/* UPDATE SUB-AGENT                                                           */
+/* UPDATE / ASSIGN / TRANSFER SUB-AGENT                                       */
 /* -------------------------------------------------------------------------- */
 
 export async function PATCH(
@@ -1190,6 +1349,294 @@ export async function PATCH(
       String(
         body.subAgentId || ""
       ).trim();
+
+    const action =
+      String(
+        body.action || "EDIT"
+      )
+        .trim()
+        .toUpperCase();
+
+    /* ---------------------------------------------------------------------- */
+    /* REQUIRED                                                               */
+    /* ---------------------------------------------------------------------- */
+
+    if (!userId) {
+      return NextResponse.json(
+        {
+          success: false,
+          message:
+            "User ID is required.",
+        },
+        {
+          status: 400,
+        }
+      );
+    }
+
+    if (!subAgentId) {
+      return NextResponse.json(
+        {
+          success: false,
+          message:
+            "Sub-Agent ID is required.",
+        },
+        {
+          status: 400,
+        }
+      );
+    }
+
+    const userCheck =
+      await getMainAgent(
+        userId
+      );
+
+    if (!userCheck.ok) {
+      return userCheck.response;
+    }
+
+    const mainAgent =
+      userCheck.user;
+
+    const existing =
+      await prisma.subAgent.findFirst({
+        where: {
+          id:
+            subAgentId,
+
+          userId,
+        },
+
+        select: {
+          id: true,
+          userId: true,
+
+          code: true,
+          name: true,
+
+          assignedStaffId:
+            true,
+
+          assignedStaff: {
+            select:
+              assignedStaffSelect,
+          },
+        },
+      });
+
+    if (!existing) {
+      return NextResponse.json(
+        {
+          success: false,
+          message:
+            "Sub-Agent not found.",
+        },
+        {
+          status: 404,
+        }
+      );
+    }
+
+    /* ---------------------------------------------------------------------- */
+    /* ASSIGN / TRANSFER                                                      */
+    /* ---------------------------------------------------------------------- */
+
+    if (
+      action ===
+        "ASSIGN_STAFF" ||
+      action ===
+        "TRANSFER_STAFF" ||
+      action ===
+        "ASSIGNMENT"
+    ) {
+      const toStaffId =
+        cleanId(
+          body.assignedStaffId ??
+          body.toStaffId
+        );
+
+      const reason =
+        cleanOptionalText(
+          body.reason
+        );
+
+      let toStaff:
+        | {
+            id: string;
+            staffCode: string;
+            name: string;
+            staffRole: string;
+          }
+        | null =
+        null;
+
+      /*
+       * null assignedStaffId means:
+       * move the Sub-Agent back to Agent Direct.
+       */
+
+      if (toStaffId) {
+        const staffCheck =
+          await validateAssignedStaff(
+            userId,
+            toStaffId
+          );
+
+        if (!staffCheck.ok) {
+          return staffCheck.response;
+        }
+
+        toStaff = {
+          id:
+            staffCheck.staff.id,
+
+          staffCode:
+            staffCheck.staff.staffCode,
+
+          name:
+            staffCheck.staff.name,
+
+          staffRole:
+            String(
+              staffCheck.staff.staffRole
+            ),
+        };
+      }
+
+      const fromStaffId =
+        existing.assignedStaffId ||
+        null;
+
+      if (
+        fromStaffId ===
+        toStaffId
+      ) {
+        return NextResponse.json(
+          {
+            success: true,
+
+            unchanged:
+              true,
+
+            message:
+              toStaff
+                ? `${existing.code} - ${existing.name} is already assigned to ${toStaff.name}.`
+                : `${existing.code} - ${existing.name} is already under Agent Direct.`,
+
+            subAgent:
+              await prisma.subAgent.findUnique({
+                where: {
+                  id:
+                    existing.id,
+                },
+
+                select:
+                  subAgentListSelect,
+              }),
+          },
+          {
+            status: 200,
+          }
+        );
+      }
+
+      const result =
+        await prisma.$transaction(
+          async (tx) => {
+            const updated =
+              await tx.subAgent.update({
+                where: {
+                  id:
+                    existing.id,
+                },
+
+                data: {
+                  assignedStaffId:
+                    toStaffId,
+                },
+
+                select:
+                  subAgentListSelect,
+              });
+
+            const history =
+              await tx.subAgentAssignmentHistory.create({
+                data: {
+                  subAgentId:
+                    existing.id,
+
+                  ownerUserId:
+                    userId,
+
+                  fromStaffId,
+
+                  toStaffId,
+
+                  changedByType:
+                    "AGENT",
+
+                  changedByUserId:
+                    userId,
+
+                  changedByStaffId:
+                    null,
+
+                  changedByName:
+                    mainAgent.name,
+
+                  reason,
+                },
+
+                select:
+                  assignmentHistorySelect,
+              });
+
+            return {
+              updated,
+              history,
+            };
+          }
+        );
+
+      const fromName =
+        existing.assignedStaff
+          ? `${existing.assignedStaff.staffCode} - ${existing.assignedStaff.name}`
+          : "Agent Direct";
+
+      const toName =
+        toStaff
+          ? `${toStaff.staffCode} - ${toStaff.name}`
+          : "Agent Direct";
+
+      return NextResponse.json(
+        {
+          success: true,
+
+          message:
+            `${existing.code} - ${existing.name} transferred from ${fromName} to ${toName}.`,
+
+          subAgent: {
+            ...result.updated,
+
+            assignmentType:
+              result.updated.assignedStaffId
+                ? "STAFF"
+                : "AGENT_DIRECT",
+          },
+
+          assignmentHistory:
+            result.history,
+        },
+        {
+          status: 200,
+        }
+      );
+    }
+
+    /* ---------------------------------------------------------------------- */
+    /* NORMAL PROFILE EDIT                                                    */
+    /* ---------------------------------------------------------------------- */
 
     const name =
       String(
@@ -1250,129 +1697,6 @@ export async function PATCH(
         body.notes
       );
 
-    /* ---------------------------------------------------------------------- */
-    /* REQUIRED                                                               */
-    /* ---------------------------------------------------------------------- */
-
-    if (!userId) {
-      return NextResponse.json(
-        {
-          success: false,
-
-          message:
-            "User ID is required.",
-        },
-        {
-          status: 400,
-        }
-      );
-    }
-
-    if (!subAgentId) {
-      return NextResponse.json(
-        {
-          success: false,
-
-          message:
-            "Sub-Agent ID is required.",
-        },
-        {
-          status: 400,
-        }
-      );
-    }
-
-    /* ---------------------------------------------------------------------- */
-    /* CHECK MAIN AGENT                                                       */
-    /* ---------------------------------------------------------------------- */
-
-    const user =
-      await prisma.user.findUnique({
-        where: {
-          id: userId,
-        },
-
-        select: {
-          id: true,
-          isActive: true,
-        },
-      });
-
-    if (!user) {
-      return NextResponse.json(
-        {
-          success: false,
-
-          message:
-            "Agent account not found.",
-        },
-        {
-          status: 404,
-        }
-      );
-    }
-
-    if (!user.isActive) {
-      return NextResponse.json(
-        {
-          success: false,
-
-          message:
-            "Agent account is inactive.",
-        },
-        {
-          status: 403,
-        }
-      );
-    }
-
-    /* ---------------------------------------------------------------------- */
-    /* CHECK SUB AGENT BELONGS TO THIS AGENT                                  */
-    /* ---------------------------------------------------------------------- */
-
-    const existing =
-      await prisma.subAgent.findFirst({
-        where: {
-          id:
-            subAgentId,
-
-          /*
-           * Very important.
-           *
-           * Prevent one Agent editing
-           * another Agent's Sub-Agent.
-           */
-
-          userId,
-        },
-
-        select: {
-          id: true,
-
-          code: true,
-
-          name: true,
-        },
-      });
-
-    if (!existing) {
-      return NextResponse.json(
-        {
-          success: false,
-
-          message:
-            "Sub-Agent not found.",
-        },
-        {
-          status: 404,
-        }
-      );
-    }
-
-    /* ---------------------------------------------------------------------- */
-    /* NAME                                                                   */
-    /* ---------------------------------------------------------------------- */
-
     if (
       !name ||
       name.length < 2
@@ -1380,7 +1704,6 @@ export async function PATCH(
       return NextResponse.json(
         {
           success: false,
-
           message:
             "Please enter a valid Sub-Agent name.",
         },
@@ -1390,15 +1713,10 @@ export async function PATCH(
       );
     }
 
-    /* ---------------------------------------------------------------------- */
-    /* MOBILE MANDATORY                                                       */
-    /* ---------------------------------------------------------------------- */
-
     if (!phone) {
       return NextResponse.json(
         {
           success: false,
-
           message:
             "Sub-Agent mobile number is mandatory.",
         },
@@ -1416,7 +1734,6 @@ export async function PATCH(
       return NextResponse.json(
         {
           success: false,
-
           message:
             "Please enter a valid 10 digit mobile number.",
         },
@@ -1425,10 +1742,6 @@ export async function PATCH(
         }
       );
     }
-
-    /* ---------------------------------------------------------------------- */
-    /* WHATSAPP                                                               */
-    /* ---------------------------------------------------------------------- */
 
     if (!whatsapp) {
       whatsapp =
@@ -1443,7 +1756,6 @@ export async function PATCH(
       return NextResponse.json(
         {
           success: false,
-
           message:
             "Please enter a valid 10 digit WhatsApp number.",
         },
@@ -1452,10 +1764,6 @@ export async function PATCH(
         }
       );
     }
-
-    /* ---------------------------------------------------------------------- */
-    /* EMAIL                                                                  */
-    /* ---------------------------------------------------------------------- */
 
     if (
       email &&
@@ -1466,7 +1774,6 @@ export async function PATCH(
       return NextResponse.json(
         {
           success: false,
-
           message:
             "Please enter a valid email address.",
         },
@@ -1475,10 +1782,6 @@ export async function PATCH(
         }
       );
     }
-
-    /* ---------------------------------------------------------------------- */
-    /* PINCODE                                                                */
-    /* ---------------------------------------------------------------------- */
 
     if (
       pincode &&
@@ -1489,7 +1792,6 @@ export async function PATCH(
       return NextResponse.json(
         {
           success: false,
-
           message:
             "Please enter a valid 6 digit pincode.",
         },
@@ -1498,18 +1800,6 @@ export async function PATCH(
         }
       );
     }
-
-    /* ---------------------------------------------------------------------- */
-    /* DUPLICATE MOBILE                                                       */
-    /* ---------------------------------------------------------------------- */
-    /*
-     * IMPORTANT:
-     *
-     * userId = SAME main Agent only
-     *
-     * id not subAgentId =
-     * ignore the record being edited
-     */
 
     const duplicatePhone =
       await prisma.subAgent.findFirst({
@@ -1525,7 +1815,6 @@ export async function PATCH(
             {
               phone,
             },
-
             {
               whatsapp:
                 phone,
@@ -1535,9 +1824,7 @@ export async function PATCH(
 
         select: {
           id: true,
-
           code: true,
-
           name: true,
         },
       });
@@ -1548,9 +1835,7 @@ export async function PATCH(
       return NextResponse.json(
         {
           success: false,
-
-          duplicate:
-            true,
+          duplicate: true,
 
           message:
             `This mobile number is already used by ${duplicatePhone.code} - ${duplicatePhone.name} under this Agent.`,
@@ -1560,10 +1845,6 @@ export async function PATCH(
         }
       );
     }
-
-    /* ---------------------------------------------------------------------- */
-    /* DUPLICATE NAME                                                         */
-    /* ---------------------------------------------------------------------- */
 
     const duplicateName =
       await prisma.subAgent.findFirst({
@@ -1578,7 +1859,6 @@ export async function PATCH(
           name: {
             equals:
               name,
-
             mode:
               "insensitive",
           },
@@ -1586,9 +1866,7 @@ export async function PATCH(
 
         select: {
           id: true,
-
           code: true,
-
           name: true,
         },
       });
@@ -1599,9 +1877,7 @@ export async function PATCH(
       return NextResponse.json(
         {
           success: false,
-
-          duplicate:
-            true,
+          duplicate: true,
 
           message:
             `Another Sub-Agent already exists as ${duplicateName.code} - ${duplicateName.name} under this Agent.`,
@@ -1611,10 +1887,6 @@ export async function PATCH(
         }
       );
     }
-
-    /* ---------------------------------------------------------------------- */
-    /* UPDATE                                                                 */
-    /* ---------------------------------------------------------------------- */
 
     const updatedSubAgent =
       await prisma.subAgent.update({
@@ -1627,53 +1899,19 @@ export async function PATCH(
           name,
 
           phone,
-
           whatsapp,
-
           email,
 
           address,
-
           district,
-
           state,
-
           pincode,
 
           notes,
         },
 
-        select: {
-          id: true,
-
-          userId: true,
-
-          code: true,
-
-          name: true,
-
-          phone: true,
-
-          whatsapp: true,
-
-          email: true,
-
-          address: true,
-
-          district: true,
-
-          state: true,
-
-          pincode: true,
-
-          notes: true,
-
-          isActive: true,
-
-          createdAt: true,
-
-          updatedAt: true,
-        },
+        select:
+          subAgentListSelect,
       });
 
     return NextResponse.json(
@@ -1683,8 +1921,14 @@ export async function PATCH(
         message:
           `${updatedSubAgent.code} - ${updatedSubAgent.name} updated successfully.`,
 
-        subAgent:
-          updatedSubAgent,
+        subAgent: {
+          ...updatedSubAgent,
+
+          assignmentType:
+            updatedSubAgent.assignedStaffId
+              ? "STAFF"
+              : "AGENT_DIRECT",
+        },
       },
       {
         status: 200,
@@ -1699,7 +1943,6 @@ export async function PATCH(
     return NextResponse.json(
       {
         success: false,
-
         message:
           "Unable to update Sub-Agent.",
       },
