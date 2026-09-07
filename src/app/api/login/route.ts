@@ -2,6 +2,11 @@ import { NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import bcrypt from "bcryptjs";
 
+import {
+  createSessionToken,
+  setSessionCookie,
+} from "@/lib/session";
+
 /* -------------------------------------------------------------------------- */
 /* HELPERS                                                                    */
 /* -------------------------------------------------------------------------- */
@@ -135,10 +140,24 @@ export async function POST(request: Request) {
       }
 
       /* -------------------------------------------------------------------- */
-      /* AGENT / ADMIN LOGIN SUCCESS                                          */
+      /* CREATE SECURE USER SESSION                                           */
       /* -------------------------------------------------------------------- */
 
-      return NextResponse.json(
+      const sessionToken = createSessionToken({
+        loginId: user.id,
+        userId: user.id,
+        staffId: null,
+        accountType: "USER",
+        role: user.role,
+        name: user.name,
+        phone: user.phone,
+      });
+
+      /* -------------------------------------------------------------------- */
+      /* USER RESPONSE                                                        */
+      /* -------------------------------------------------------------------- */
+
+      const response = NextResponse.json(
         {
           success: true,
           message: "Login successful",
@@ -149,7 +168,7 @@ export async function POST(request: Request) {
             id: user.id,
 
             /*
-             * For the main Agent/Admin,
+             * Main Agent/Admin:
              * userId and id are the same.
              */
             userId: user.id,
@@ -174,6 +193,17 @@ export async function POST(request: Request) {
           status: 200,
         }
       );
+
+      /* -------------------------------------------------------------------- */
+      /* SET HTTP-ONLY SESSION COOKIE                                         */
+      /* -------------------------------------------------------------------- */
+
+      setSessionCookie(
+        response,
+        sessionToken
+      );
+
+      return response;
     }
 
     /* ---------------------------------------------------------------------- */
@@ -320,10 +350,36 @@ export async function POST(request: Request) {
     }
 
     /* ---------------------------------------------------------------------- */
-    /* STAFF / SUPERVISOR LOGIN SUCCESS                                       */
+    /* CREATE SECURE STAFF SESSION                                            */
     /* ---------------------------------------------------------------------- */
 
-    return NextResponse.json(
+    const sessionToken = createSessionToken({
+      loginId: staff.id,
+
+      /*
+       * userId = owning Agent / Business ID
+       */
+      userId: staff.userId,
+
+      /*
+       * staffId = logged-in staff identity
+       */
+      staffId: staff.id,
+
+      accountType: "STAFF",
+
+      role: staff.staffRole,
+
+      name: staff.name,
+
+      phone: staff.phone,
+    });
+
+    /* ---------------------------------------------------------------------- */
+    /* STAFF RESPONSE                                                         */
+    /* ---------------------------------------------------------------------- */
+
+    const response = NextResponse.json(
       {
         success: true,
 
@@ -336,14 +392,9 @@ export async function POST(request: Request) {
 
         user: {
           /*
-           * IMPORTANT:
-           *
            * id       = staff identity
            * staffId  = staff identity
            * userId   = owning Agent / Business ID
-           *
-           * All existing Customers, Policies,
-           * Sub Agents, Renewals etc. use userId.
            */
           id: staff.id,
           staffId: staff.id,
@@ -394,8 +445,22 @@ export async function POST(request: Request) {
         status: 200,
       }
     );
+
+    /* ---------------------------------------------------------------------- */
+    /* SET HTTP-ONLY SESSION COOKIE                                           */
+    /* ---------------------------------------------------------------------- */
+
+    setSessionCookie(
+      response,
+      sessionToken
+    );
+
+    return response;
   } catch (error) {
-    console.error("LOGIN ERROR:", error);
+    console.error(
+      "LOGIN ERROR:",
+      error
+    );
 
     const message =
       error instanceof Error
@@ -405,7 +470,9 @@ export async function POST(request: Request) {
     return NextResponse.json(
       {
         success: false,
-        message: "Login failed. Please try again.",
+
+        message:
+          "Login failed. Please try again.",
 
         error:
           process.env.NODE_ENV === "development"

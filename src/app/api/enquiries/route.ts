@@ -1,9 +1,30 @@
-import {
-  NextRequest,
-  NextResponse,
-} from "next/server";
-
+import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
+
+/* -------------------------------------------------------------------------- */
+/* CONSTANTS                                                                  */
+/* -------------------------------------------------------------------------- */
+
+const ALLOWED_BUSINESS_TYPES = [
+  "HEALTH",
+  "MOTOR",
+  "LIFE",
+  "OTHER",
+] as const;
+
+const ALLOWED_ENQUIRY_STATUSES = [
+  "NEW",
+  "FOLLOW_UP",
+  "CONVERTED",
+  "LOST",
+  "CLOSED",
+] as const;
+
+type BusinessType =
+  (typeof ALLOWED_BUSINESS_TYPES)[number];
+
+type EnquiryStatus =
+  (typeof ALLOWED_ENQUIRY_STATUSES)[number];
 
 /* -------------------------------------------------------------------------- */
 /* HELPERS                                                                    */
@@ -16,15 +37,20 @@ function parseDate(
     return null;
   }
 
-  const text = String(value).trim();
+  const text =
+    String(value).trim();
 
   if (!text) {
     return null;
   }
 
-  const date = new Date(
-    `${text}T00:00:00.000Z`
-  );
+  const dateString =
+    text.includes("T")
+      ? text
+      : `${text}T00:00:00.000Z`;
+
+  const date =
+    new Date(dateString);
 
   if (
     Number.isNaN(
@@ -37,45 +63,161 @@ function parseDate(
   return date;
 }
 
+function cleanNullableText(
+  value: unknown
+): string | null {
+  if (
+    value === null ||
+    value === undefined
+  ) {
+    return null;
+  }
+
+  const text =
+    String(value).trim();
+
+  return text || null;
+}
+
+/* -------------------------------------------------------------------------- */
+/* VALIDATE USER                                                              */
+/* -------------------------------------------------------------------------- */
+
+async function validateUser(
+  userId: string
+) {
+  const user =
+    await prisma.user.findUnique({
+      where: {
+        id: userId,
+      },
+
+      select: {
+        id: true,
+        isActive: true,
+      },
+    });
+
+  if (!user) {
+    return {
+      ok: false as const,
+
+      response:
+        NextResponse.json(
+          {
+            success: false,
+            message:
+              "Agent account not found.",
+          },
+          {
+            status: 404,
+          }
+        ),
+    };
+  }
+
+  if (!user.isActive) {
+    return {
+      ok: false as const,
+
+      response:
+        NextResponse.json(
+          {
+            success: false,
+            message:
+              "Agent account is inactive.",
+          },
+          {
+            status: 403,
+          }
+        ),
+    };
+  }
+
+  return {
+    ok: true as const,
+    user,
+  };
+}
+
+/* -------------------------------------------------------------------------- */
+/* CUSTOMER SELECT                                                            */
+/* -------------------------------------------------------------------------- */
+
+const customerSelect = {
+  id: true,
+  customerId: true,
+  name: true,
+  phone: true,
+  email: true,
+} as const;
+
+/* -------------------------------------------------------------------------- */
+/* FOLLOW-UP SELECT                                                           */
+/* -------------------------------------------------------------------------- */
+/*
+ * IMPORTANT:
+ *
+ * Enquiries should not load the complete FollowUp model.
+ *
+ * The FollowUp module now contains additional history / creator fields.
+ * The enquiry module only needs these stable fields.
+ */
+
+const enquiryFollowUpSelect = {
+  id: true,
+  userId: true,
+  customerId: true,
+  enquiryId: true,
+
+  comment: true,
+
+  followUpDate: true,
+  nextFollowUpDate: true,
+
+  status: true,
+  outcome: true,
+
+  lostReason: true,
+  cancellationReason: true,
+
+  completedAt: true,
+  createdAt: true,
+  updatedAt: true,
+} as const;
+
 /* -------------------------------------------------------------------------- */
 /* GET ENQUIRIES / SINGLE ENQUIRY                                             */
 /* -------------------------------------------------------------------------- */
-/*
-GET examples:
-
-All enquiries:
-/api/enquiries?userId=USER_ID
-
-Customer enquiries:
-/api/enquiries?userId=USER_ID&customerId=CUSTOMER_ID
-
-Single enquiry:
-/api/enquiries?userId=USER_ID&id=ENQUIRY_ID
-*/
 
 export async function GET(
   request: NextRequest
 ) {
   try {
-    const { searchParams } =
-      new URL(request.url);
+    const {
+      searchParams,
+    } =
+      new URL(
+        request.url
+      );
 
     const userId =
       searchParams
         .get("userId")
-        ?.trim() || "";
+        ?.trim() ||
+      "";
 
     const customerId =
       searchParams
         .get("customerId")
-        ?.trim() || "";
+        ?.trim() ||
+      "";
 
     const enquiryId =
       searchParams
         .get("id")
-        ?.trim() || "";
-
-    /* VALIDATE USER ID */
+        ?.trim() ||
+      "";
 
     if (!userId) {
       return NextResponse.json(
@@ -90,48 +232,17 @@ export async function GET(
       );
     }
 
-    /* CHECK USER */
-
-    const user =
-      await prisma.user.findUnique({
-        where: {
-          id: userId,
-        },
-
-        select: {
-          id: true,
-          isActive: true,
-        },
-      });
-
-    if (!user) {
-      return NextResponse.json(
-        {
-          success: false,
-          message:
-            "Agent account not found.",
-        },
-        {
-          status: 404,
-        }
+    const userCheck =
+      await validateUser(
+        userId
       );
-    }
 
-    if (!user.isActive) {
-      return NextResponse.json(
-        {
-          success: false,
-          message:
-            "Agent account is inactive.",
-        },
-        {
-          status: 403,
-        }
-      );
+    if (!userCheck.ok) {
+      return userCheck.response;
     }
 
     /* ---------------------------------------------------------------------- */
-    /* LOAD SINGLE ENQUIRY                                                    */
+    /* SINGLE ENQUIRY                                                         */
     /* ---------------------------------------------------------------------- */
 
     if (enquiryId) {
@@ -145,18 +256,17 @@ export async function GET(
 
           include: {
             customer: {
-              select: {
-                id: true,
-                customerId: true,
-                name: true,
-                phone: true,
-                email: true,
-              },
+              select:
+                customerSelect,
             },
 
             followUps: {
+              select:
+                enquiryFollowUpSelect,
+
               orderBy: {
-                createdAt: "desc",
+                createdAt:
+                  "desc",
               },
             },
           },
@@ -187,7 +297,7 @@ export async function GET(
     }
 
     /* ---------------------------------------------------------------------- */
-    /* LOAD ENQUIRY LIST                                                      */
+    /* ENQUIRY LIST                                                           */
     /* ---------------------------------------------------------------------- */
 
     const enquiries =
@@ -205,24 +315,31 @@ export async function GET(
 
         include: {
           customer: {
-            select: {
-              id: true,
-              customerId: true,
-              name: true,
-              phone: true,
-              email: true,
-            },
+            select:
+              customerSelect,
           },
 
+          /*
+           * Only the latest follow-up is required
+           * for the enquiry listing.
+           */
+
           followUps: {
+            select:
+              enquiryFollowUpSelect,
+
             orderBy: {
-              createdAt: "desc",
+              createdAt:
+                "desc",
             },
+
+            take: 1,
           },
         },
 
         orderBy: {
-          createdAt: "desc",
+          createdAt:
+            "desc",
         },
       });
 
@@ -265,40 +382,35 @@ export async function POST(
     const body =
       await request.json();
 
-    /* BASIC VALUES */
-
     const userId =
       String(
-        body.userId || ""
+        body.userId ||
+        ""
       ).trim();
 
     const customerId =
       String(
-        body.customerId || ""
+        body.customerId ||
+        ""
       ).trim();
 
     const businessType =
       String(
-        body.businessType || ""
+        body.businessType ||
+        ""
       )
         .trim()
         .toUpperCase();
 
     const requirement =
-      body.requirement
-        ? String(
-            body.requirement
-          ).trim()
-        : null;
+      cleanNullableText(
+        body.requirement
+      );
 
     const remarks =
-      body.remarks
-        ? String(
-            body.remarks
-          ).trim()
-        : null;
-
-    /* VALIDATE USER */
+      cleanNullableText(
+        body.remarks
+      );
 
     if (!userId) {
       return NextResponse.json(
@@ -313,8 +425,6 @@ export async function POST(
       );
     }
 
-    /* VALIDATE CUSTOMER */
-
     if (!customerId) {
       return NextResponse.json(
         {
@@ -328,19 +438,9 @@ export async function POST(
       );
     }
 
-    /* VALIDATE BUSINESS TYPE */
-
-    const allowedBusinessTypes = [
-      "HEALTH",
-      "MOTOR",
-      "LIFE",
-      "OTHER",
-    ] as const;
-
     if (
-      !allowedBusinessTypes.includes(
-        businessType as
-          (typeof allowedBusinessTypes)[number]
+      !ALLOWED_BUSINESS_TYPES.includes(
+        businessType as BusinessType
       )
     ) {
       return NextResponse.json(
@@ -356,50 +456,16 @@ export async function POST(
     }
 
     const validBusinessType =
-      businessType as
-        (typeof allowedBusinessTypes)[number];
+      businessType as BusinessType;
 
-    /* CHECK USER */
-
-    const user =
-      await prisma.user.findUnique({
-        where: {
-          id: userId,
-        },
-
-        select: {
-          id: true,
-          isActive: true,
-        },
-      });
-
-    if (!user) {
-      return NextResponse.json(
-        {
-          success: false,
-          message:
-            "Agent account not found.",
-        },
-        {
-          status: 404,
-        }
+    const userCheck =
+      await validateUser(
+        userId
       );
-    }
 
-    if (!user.isActive) {
-      return NextResponse.json(
-        {
-          success: false,
-          message:
-            "Agent account is inactive.",
-        },
-        {
-          status: 403,
-        }
-      );
+    if (!userCheck.ok) {
+      return userCheck.response;
     }
-
-    /* CHECK CUSTOMER OWNERSHIP */
 
     const customer =
       await prisma.customer.findFirst({
@@ -429,13 +495,19 @@ export async function POST(
       );
     }
 
-    /* NEXT FOLLOW-UP DATE */
-
     let nextFollowUpDate:
       | Date
-      | null = null;
+      | null =
+      null;
 
-    if (body.nextFollowUpDate) {
+    if (
+      body.nextFollowUpDate !==
+        undefined &&
+      body.nextFollowUpDate !==
+        null &&
+      body.nextFollowUpDate !==
+        ""
+    ) {
       nextFollowUpDate =
         parseDate(
           body.nextFollowUpDate
@@ -455,12 +527,17 @@ export async function POST(
       }
     }
 
-    /* ENQUIRY DATE */
-
     let enquiryDate =
       new Date();
 
-    if (body.enquiryDate) {
+    if (
+      body.enquiryDate !==
+        undefined &&
+      body.enquiryDate !==
+        null &&
+      body.enquiryDate !==
+        ""
+    ) {
       const parsedEnquiryDate =
         parseDate(
           body.enquiryDate
@@ -483,8 +560,6 @@ export async function POST(
         parsedEnquiryDate;
     }
 
-    /* CREATE ENQUIRY */
-
     const enquiry =
       await prisma.enquiry.create({
         data: {
@@ -497,35 +572,42 @@ export async function POST(
           requirement,
           remarks,
 
-          status: "NEW",
+          status:
+            "NEW",
 
           enquiryDate,
 
           nextFollowUpDate,
 
-          isActive: true,
+          isActive:
+            true,
         },
 
         include: {
           customer: {
-            select: {
-              id: true,
-              customerId: true,
-              name: true,
-              phone: true,
-              email: true,
-            },
+            select:
+              customerSelect,
           },
 
-          followUps: true,
+          followUps: {
+            select:
+              enquiryFollowUpSelect,
+
+            orderBy: {
+              createdAt:
+                "desc",
+            },
+          },
         },
       });
 
     return NextResponse.json(
       {
         success: true,
+
         message:
           "Enquiry saved successfully.",
+
         enquiry,
       },
       {
@@ -543,6 +625,380 @@ export async function POST(
         success: false,
         message:
           "Unable to save enquiry.",
+      },
+      {
+        status: 500,
+      }
+    );
+  }
+}
+
+/* -------------------------------------------------------------------------- */
+/* UPDATE ENQUIRY                                                             */
+/* -------------------------------------------------------------------------- */
+
+export async function PUT(
+  request: NextRequest
+) {
+  try {
+    const body =
+      await request.json();
+
+    const id =
+      String(
+        body.id ||
+        ""
+      ).trim();
+
+    const userId =
+      String(
+        body.userId ||
+        ""
+      ).trim();
+
+    const businessType =
+      String(
+        body.businessType ||
+        ""
+      )
+        .trim()
+        .toUpperCase();
+
+    const requestedStatus =
+      String(
+        body.status ||
+        ""
+      )
+        .trim()
+        .toUpperCase();
+
+    const requirement =
+      cleanNullableText(
+        body.requirement
+      );
+
+    const remarks =
+      cleanNullableText(
+        body.remarks
+      );
+
+    if (!id) {
+      return NextResponse.json(
+        {
+          success: false,
+          message:
+            "Enquiry ID is required.",
+        },
+        {
+          status: 400,
+        }
+      );
+    }
+
+    if (!userId) {
+      return NextResponse.json(
+        {
+          success: false,
+          message:
+            "User ID is required.",
+        },
+        {
+          status: 400,
+        }
+      );
+    }
+
+    if (
+      !ALLOWED_BUSINESS_TYPES.includes(
+        businessType as BusinessType
+      )
+    ) {
+      return NextResponse.json(
+        {
+          success: false,
+          message:
+            "Please select Health, Motor, Life or Other.",
+        },
+        {
+          status: 400,
+        }
+      );
+    }
+
+    const validBusinessType =
+      businessType as BusinessType;
+
+    const userCheck =
+      await validateUser(
+        userId
+      );
+
+    if (!userCheck.ok) {
+      return userCheck.response;
+    }
+
+    const existing =
+      await prisma.enquiry.findFirst({
+        where: {
+          id,
+          userId,
+          isActive: true,
+        },
+
+        select: {
+          id: true,
+          customerId: true,
+          status: true,
+          enquiryDate: true,
+          nextFollowUpDate:
+            true,
+          convertedAt:
+            true,
+          closedAt:
+            true,
+        },
+      });
+
+    if (!existing) {
+      return NextResponse.json(
+        {
+          success: false,
+          message:
+            "Enquiry not found.",
+        },
+        {
+          status: 404,
+        }
+      );
+    }
+
+    const statusToUse =
+      requestedStatus ||
+      String(
+        existing.status
+      ).toUpperCase();
+
+    if (
+      !ALLOWED_ENQUIRY_STATUSES.includes(
+        statusToUse as EnquiryStatus
+      )
+    ) {
+      return NextResponse.json(
+        {
+          success: false,
+          message:
+            "Invalid enquiry status.",
+        },
+        {
+          status: 400,
+        }
+      );
+    }
+
+    const validStatus =
+      statusToUse as EnquiryStatus;
+
+    let enquiryDate =
+      existing.enquiryDate;
+
+    if (
+      body.enquiryDate !==
+        undefined &&
+      body.enquiryDate !==
+        null &&
+      body.enquiryDate !==
+        ""
+    ) {
+      const parsedEnquiryDate =
+        parseDate(
+          body.enquiryDate
+        );
+
+      if (!parsedEnquiryDate) {
+        return NextResponse.json(
+          {
+            success: false,
+            message:
+              "Please enter a valid enquiry date.",
+          },
+          {
+            status: 400,
+          }
+        );
+      }
+
+      enquiryDate =
+        parsedEnquiryDate;
+    }
+
+    let nextFollowUpDate =
+      existing.nextFollowUpDate;
+
+    if (
+      Object.prototype.hasOwnProperty.call(
+        body,
+        "nextFollowUpDate"
+      )
+    ) {
+      if (
+        body.nextFollowUpDate !==
+          null &&
+        body.nextFollowUpDate !==
+          ""
+      ) {
+        const parsedNextDate =
+          parseDate(
+            body.nextFollowUpDate
+          );
+
+        if (!parsedNextDate) {
+          return NextResponse.json(
+            {
+              success: false,
+              message:
+                "Please enter a valid next follow-up date.",
+            },
+            {
+              status: 400,
+            }
+          );
+        }
+
+        nextFollowUpDate =
+          parsedNextDate;
+      } else {
+        nextFollowUpDate =
+          null;
+      }
+    }
+
+    const now =
+      new Date();
+
+    let convertedAt =
+      existing.convertedAt;
+
+    let closedAt =
+      existing.closedAt;
+
+    if (
+      validStatus ===
+      "CONVERTED"
+    ) {
+      convertedAt =
+        existing.convertedAt ||
+        now;
+
+      closedAt =
+        existing.closedAt ||
+        now;
+
+      nextFollowUpDate =
+        null;
+    }
+
+    if (
+      validStatus ===
+        "LOST" ||
+      validStatus ===
+        "CLOSED"
+    ) {
+      convertedAt =
+        null;
+
+      closedAt =
+        existing.closedAt ||
+        now;
+
+      nextFollowUpDate =
+        null;
+    }
+
+    if (
+      validStatus ===
+        "NEW" ||
+      validStatus ===
+        "FOLLOW_UP"
+    ) {
+      convertedAt =
+        null;
+
+      closedAt =
+        null;
+    }
+
+    const enquiry =
+      await prisma.enquiry.update({
+        where: {
+          id:
+            existing.id,
+        },
+
+        data: {
+          businessType:
+            validBusinessType,
+
+          requirement,
+
+          remarks,
+
+          status:
+            validStatus,
+
+          enquiryDate,
+
+          nextFollowUpDate,
+
+          convertedAt,
+
+          closedAt,
+        },
+
+        include: {
+          customer: {
+            select:
+              customerSelect,
+          },
+
+          followUps: {
+            select:
+              enquiryFollowUpSelect,
+
+            orderBy: {
+              createdAt:
+                "desc",
+            },
+          },
+        },
+      });
+
+    return NextResponse.json(
+      {
+        success: true,
+
+        message:
+          validStatus ===
+          "CONVERTED"
+            ? "Converted enquiry updated successfully."
+            : "Enquiry updated successfully.",
+
+        enquiry,
+      },
+      {
+        status: 200,
+      }
+    );
+  } catch (error) {
+    console.error(
+      "UPDATE ENQUIRY ERROR:",
+      error
+    );
+
+    return NextResponse.json(
+      {
+        success: false,
+        message:
+          "Unable to update enquiry.",
       },
       {
         status: 500,

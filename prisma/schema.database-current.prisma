@@ -15,7 +15,6 @@ model User {
   password                 String
   role                     UserRole                   @default(AGENT)
   accountMode              AgentAccountMode           @default(SELF_STAFF)
-  supervisorId             String?
   logoUrl                  String?
   isActive                 Boolean                    @default(true)
   createdAt                DateTime                   @default(now())
@@ -55,17 +54,6 @@ model User {
   companies                UserCompany[]
   withdrawalRequests       WithdrawalRequest[]        @relation("AgentWithdrawals")
   withdrawalsApproved      WithdrawalRequest[]        @relation("WithdrawalApprovedBy")
-
-  // Hierarchy / assignment foundation
-  supervisor                Staff?                      @relation("AgentSupervisor", fields: [supervisorId], references: [id], onDelete: SetNull)
-  agentSupervisorHistory    AgentSupervisorHistory[]    @relation("AgentSupervisorHistoryAgent")
-  supervisorChangesMade     AgentSupervisorHistory[]    @relation("AgentSupervisorHistoryChangedByUser")
-  subAgentAssignmentHistory SubAgentAssignmentHistory[]
-  subAgentChangesMade       SubAgentAssignmentHistory[] @relation("SubAgentAssignmentChangedByUser")
-  enquiryAssignmentHistory  EnquiryAssignmentHistory[]
-  enquiryChangesMade        EnquiryAssignmentHistory[]  @relation("EnquiryAssignmentChangedByUser")
-
-  @@index([supervisorId])
 }
 
 model Company {
@@ -98,43 +86,32 @@ model UserCompany {
 }
 
 model SubAgent {
-  id              String     @id @default(cuid())
-  userId          String
-  code            String
-  name            String
-  phone           String?
-  whatsapp        String?
-  email           String?
-  address         String?
-  district        String?
-  state           String?
-  pincode         String?
-  notes           String?
-  isActive        Boolean    @default(true)
-  inactiveReason  String?
-  inactiveAt      DateTime?
-  assignedStaffId String?
-  createdAt       DateTime   @default(now())
-  updatedAt       DateTime   @updatedAt
-  customers       Customer[]
-  policies        Policy[]
-  user            User       @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  // Current assignment + permanent assignment history
-  assignedStaff          Staff?                      @relation("SubAgentAssignedStaff", fields: [assignedStaffId], references: [id], onDelete: SetNull)
-  assignmentHistory      SubAgentAssignmentHistory[] @relation("SubAgentAssignmentHistorySubAgent")
-  enquiryAssignments     Enquiry[]                   @relation("EnquiryAssignedSubAgent")
-  enquiryOrigins         Enquiry[]                   @relation("EnquiryOriginSubAgent")
-  enquiryAssignmentsFrom EnquiryAssignmentHistory[]  @relation("EnquiryAssignmentFromSubAgent")
-  enquiryAssignmentsTo   EnquiryAssignmentHistory[]  @relation("EnquiryAssignmentToSubAgent")
+  id             String     @id @default(cuid())
+  userId         String
+  code           String
+  name           String
+  phone          String?
+  whatsapp       String?
+  email          String?
+  address        String?
+  district       String?
+  state          String?
+  pincode        String?
+  notes          String?
+  isActive       Boolean    @default(true)
+  inactiveReason String?
+  inactiveAt     DateTime?
+  createdAt      DateTime   @default(now())
+  updatedAt      DateTime   @updatedAt
+  customers      Customer[]
+  policies       Policy[]
+  user           User       @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([userId, code])
   @@index([userId])
   @@index([userId, isActive])
   @@index([userId, name])
   @@index([phone])
-  @@index([assignedStaffId])
-  @@index([userId, assignedStaffId])
 }
 
 model Consultant {
@@ -301,45 +278,14 @@ model Enquiry {
   convertedAt      DateTime?
   closedAt         DateTime?
   isActive         Boolean       @default(true)
-
-  // Historical origin: never rewrite these when the enquiry is reassigned.
-  originStaffId      String?
-  originSupervisorId String?
-  originSubAgentId   String?
-
-  // Current working assignment: Agent direct when all three are null.
-  assignedStaffId      String?
-  assignedSupervisorId String?
-  assignedSubAgentId   String?
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  customer  Customer   @relation(fields: [customerId], references: [id], onDelete: Cascade)
-  user      User       @relation(fields: [userId], references: [id], onDelete: Cascade)
-  followUps FollowUp[]
-
-  originStaff      Staff?    @relation("EnquiryOriginStaff", fields: [originStaffId], references: [id], onDelete: SetNull)
-  originSupervisor Staff?    @relation("EnquiryOriginSupervisor", fields: [originSupervisorId], references: [id], onDelete: SetNull)
-  originSubAgent   SubAgent? @relation("EnquiryOriginSubAgent", fields: [originSubAgentId], references: [id], onDelete: SetNull)
-
-  assignedStaff      Staff?    @relation("EnquiryAssignedStaff", fields: [assignedStaffId], references: [id], onDelete: SetNull)
-  assignedSupervisor Staff?    @relation("EnquiryAssignedSupervisor", fields: [assignedSupervisorId], references: [id], onDelete: SetNull)
-  assignedSubAgent   SubAgent? @relation("EnquiryAssignedSubAgent", fields: [assignedSubAgentId], references: [id], onDelete: SetNull)
-
-  assignmentHistory EnquiryAssignmentHistory[] @relation("EnquiryAssignmentHistoryEnquiry")
+  createdAt        DateTime      @default(now())
+  updatedAt        DateTime      @updatedAt
+  customer         Customer      @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  user             User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  followUps        FollowUp[]
 
   @@index([userId])
   @@index([customerId])
-  @@index([originStaffId])
-  @@index([originSupervisorId])
-  @@index([originSubAgentId])
-  @@index([assignedStaffId])
-  @@index([assignedSupervisorId])
-  @@index([assignedSubAgentId])
-  @@index([userId, assignedStaffId])
-  @@index([userId, assignedSupervisorId])
-  @@index([userId, assignedSubAgentId])
   @@index([userId, status])
   @@index([userId, businessType])
   @@index([userId, nextFollowUpDate])
@@ -437,8 +383,6 @@ model Policy {
   vehicleRegistrationNumber String?
   vehicleYear               Int?
   companyId                 String?
-  originStaffId             String?
-  originSupervisorId        String?
   emiFollowUps              EmiFollowUp[]
   installments              EmiInstallment[]
   company                   Company?              @relation(fields: [companyId], references: [id])
@@ -446,20 +390,13 @@ model Policy {
   customer                  Customer              @relation(fields: [customerId], references: [id])
   subAgent                  SubAgent?             @relation(fields: [subAgentId], references: [id])
   user                      User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  // Snapshot production attribution. These do not change when assignments move later.
-  originStaff      Staff? @relation("PolicyOriginStaff", fields: [originStaffId], references: [id], onDelete: SetNull)
-  originSupervisor Staff? @relation("PolicyOriginSupervisor", fields: [originSupervisorId], references: [id], onDelete: SetNull)
-
-  renewalFollowUps RenewalFollowUp[]
+  renewalFollowUps          RenewalFollowUp[]
 
   @@index([userId])
   @@index([customerId])
   @@index([companyId])
   @@index([subAgentId])
   @@index([consultantId])
-  @@index([originStaffId])
-  @@index([originSupervisorId])
   @@index([userId, customerId])
   @@index([userId, companyId])
   @@index([userId, companyId, startDate])
@@ -742,32 +679,6 @@ model Staff {
   attendance               StaffAttendance[]
   followUpsCreated         FollowUp[]                 @relation("FollowUpCreatedByStaff")
 
-  // Hierarchy / assignment foundation
-  supervisedAgents  User[]     @relation("AgentSupervisor")
-  assignedSubAgents SubAgent[] @relation("SubAgentAssignedStaff")
-
-  subAgentAssignmentsFrom SubAgentAssignmentHistory[] @relation("SubAgentAssignmentFromStaff")
-  subAgentAssignmentsTo   SubAgentAssignmentHistory[] @relation("SubAgentAssignmentToStaff")
-  subAgentChangesMade     SubAgentAssignmentHistory[] @relation("SubAgentAssignmentChangedByStaff")
-
-  enquiryOrigins           Enquiry[] @relation("EnquiryOriginStaff")
-  enquirySupervisorOrigins Enquiry[] @relation("EnquiryOriginSupervisor")
-  assignedEnquiries        Enquiry[] @relation("EnquiryAssignedStaff")
-  supervisedEnquiries      Enquiry[] @relation("EnquiryAssignedSupervisor")
-
-  enquiryAssignmentsFromStaff      EnquiryAssignmentHistory[] @relation("EnquiryAssignmentFromStaff")
-  enquiryAssignmentsToStaff        EnquiryAssignmentHistory[] @relation("EnquiryAssignmentToStaff")
-  enquiryAssignmentsFromSupervisor EnquiryAssignmentHistory[] @relation("EnquiryAssignmentFromSupervisor")
-  enquiryAssignmentsToSupervisor   EnquiryAssignmentHistory[] @relation("EnquiryAssignmentToSupervisor")
-  enquiryChangesMade               EnquiryAssignmentHistory[] @relation("EnquiryAssignmentChangedByStaff")
-
-  agentSupervisorHistoryFrom AgentSupervisorHistory[] @relation("AgentSupervisorHistoryFromSupervisor")
-  agentSupervisorHistoryTo   AgentSupervisorHistory[] @relation("AgentSupervisorHistoryToSupervisor")
-  agentSupervisorChangesMade AgentSupervisorHistory[] @relation("AgentSupervisorHistoryChangedByStaff")
-
-  policiesOriginated       Policy[] @relation("PolicyOriginStaff")
-  policiesOriginSupervisor Policy[] @relation("PolicyOriginSupervisor")
-
   @@unique([userId, staffCode])
   @@index([userId])
   @@index([supervisorId])
@@ -776,112 +687,6 @@ model Staff {
   @@index([userId, isActive])
   @@index([userId, workMode])
   @@index([workMode])
-}
-
-model SubAgentAssignmentHistory {
-  id               String              @id @default(cuid())
-  subAgentId       String
-  ownerUserId      String
-  fromStaffId      String?
-  toStaffId        String?
-  changedByType    AssignmentActorType
-  changedByUserId  String?
-  changedByStaffId String?
-  changedByName    String
-  reason           String?
-  createdAt        DateTime            @default(now())
-
-  subAgent       SubAgent @relation("SubAgentAssignmentHistorySubAgent", fields: [subAgentId], references: [id], onDelete: Cascade)
-  ownerUser      User     @relation(fields: [ownerUserId], references: [id], onDelete: Cascade)
-  fromStaff      Staff?   @relation("SubAgentAssignmentFromStaff", fields: [fromStaffId], references: [id], onDelete: SetNull)
-  toStaff        Staff?   @relation("SubAgentAssignmentToStaff", fields: [toStaffId], references: [id], onDelete: SetNull)
-  changedByUser  User?    @relation("SubAgentAssignmentChangedByUser", fields: [changedByUserId], references: [id], onDelete: SetNull)
-  changedByStaff Staff?   @relation("SubAgentAssignmentChangedByStaff", fields: [changedByStaffId], references: [id], onDelete: SetNull)
-
-  @@index([subAgentId])
-  @@index([ownerUserId])
-  @@index([fromStaffId])
-  @@index([toStaffId])
-  @@index([changedByUserId])
-  @@index([changedByStaffId])
-  @@index([subAgentId, createdAt])
-  @@index([ownerUserId, createdAt])
-}
-
-model EnquiryAssignmentHistory {
-  id          String @id @default(cuid())
-  enquiryId   String
-  ownerUserId String
-
-  fromStaffId String?
-  toStaffId   String?
-
-  fromSupervisorId String?
-  toSupervisorId   String?
-
-  fromSubAgentId String?
-  toSubAgentId   String?
-
-  changedByType    AssignmentActorType
-  changedByUserId  String?
-  changedByStaffId String?
-  changedByName    String
-  reason           String?
-  createdAt        DateTime            @default(now())
-
-  enquiry   Enquiry @relation("EnquiryAssignmentHistoryEnquiry", fields: [enquiryId], references: [id], onDelete: Cascade)
-  ownerUser User    @relation(fields: [ownerUserId], references: [id], onDelete: Cascade)
-
-  fromStaff Staff? @relation("EnquiryAssignmentFromStaff", fields: [fromStaffId], references: [id], onDelete: SetNull)
-  toStaff   Staff? @relation("EnquiryAssignmentToStaff", fields: [toStaffId], references: [id], onDelete: SetNull)
-
-  fromSupervisor Staff? @relation("EnquiryAssignmentFromSupervisor", fields: [fromSupervisorId], references: [id], onDelete: SetNull)
-  toSupervisor   Staff? @relation("EnquiryAssignmentToSupervisor", fields: [toSupervisorId], references: [id], onDelete: SetNull)
-
-  fromSubAgent SubAgent? @relation("EnquiryAssignmentFromSubAgent", fields: [fromSubAgentId], references: [id], onDelete: SetNull)
-  toSubAgent   SubAgent? @relation("EnquiryAssignmentToSubAgent", fields: [toSubAgentId], references: [id], onDelete: SetNull)
-
-  changedByUser  User?  @relation("EnquiryAssignmentChangedByUser", fields: [changedByUserId], references: [id], onDelete: SetNull)
-  changedByStaff Staff? @relation("EnquiryAssignmentChangedByStaff", fields: [changedByStaffId], references: [id], onDelete: SetNull)
-
-  @@index([enquiryId])
-  @@index([ownerUserId])
-  @@index([fromStaffId])
-  @@index([toStaffId])
-  @@index([fromSupervisorId])
-  @@index([toSupervisorId])
-  @@index([fromSubAgentId])
-  @@index([toSubAgentId])
-  @@index([changedByUserId])
-  @@index([changedByStaffId])
-  @@index([enquiryId, createdAt])
-  @@index([ownerUserId, createdAt])
-}
-
-model AgentSupervisorHistory {
-  id               String              @id @default(cuid())
-  agentId          String
-  fromSupervisorId String?
-  toSupervisorId   String?
-  changedByType    AssignmentActorType
-  changedByUserId  String?
-  changedByStaffId String?
-  changedByName    String
-  reason           String?
-  createdAt        DateTime            @default(now())
-
-  agent          User   @relation("AgentSupervisorHistoryAgent", fields: [agentId], references: [id], onDelete: Cascade)
-  fromSupervisor Staff? @relation("AgentSupervisorHistoryFromSupervisor", fields: [fromSupervisorId], references: [id], onDelete: SetNull)
-  toSupervisor   Staff? @relation("AgentSupervisorHistoryToSupervisor", fields: [toSupervisorId], references: [id], onDelete: SetNull)
-  changedByUser  User?  @relation("AgentSupervisorHistoryChangedByUser", fields: [changedByUserId], references: [id], onDelete: SetNull)
-  changedByStaff Staff? @relation("AgentSupervisorHistoryChangedByStaff", fields: [changedByStaffId], references: [id], onDelete: SetNull)
-
-  @@index([agentId])
-  @@index([fromSupervisorId])
-  @@index([toSupervisorId])
-  @@index([changedByUserId])
-  @@index([changedByStaffId])
-  @@index([agentId, createdAt])
 }
 
 model StaffAttendance {
@@ -1575,12 +1380,4 @@ enum StaffWorkMode {
   WORK_FROM_HOME
   HYBRID
   FIELD
-}
-
-enum AssignmentActorType {
-  AGENT
-  STAFF
-  SUPERVISOR
-  ADMIN
-  SYSTEM
 }

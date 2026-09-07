@@ -21,6 +21,55 @@ type AgentUser = {
   role?: string;
 };
 
+type Staff = {
+  id: string;
+  staffCode?: string | null;
+  name: string;
+  staffRole?: string | null;
+  designation?: string | null;
+  department?: string | null;
+  isActive?: boolean;
+};
+
+type AssignmentHistory = {
+  id: string;
+
+  subAgentId: string;
+  ownerUserId: string;
+
+  fromStaffId?: string | null;
+  toStaffId?: string | null;
+
+  changedByType?: string | null;
+  changedByUserId?: string | null;
+  changedByStaffId?: string | null;
+  changedByName?: string | null;
+
+  reason?: string | null;
+  createdAt?: string | null;
+
+  fromStaff?: {
+    id: string;
+    staffCode?: string | null;
+    name?: string | null;
+    staffRole?: string | null;
+  } | null;
+
+  toStaff?: {
+    id: string;
+    staffCode?: string | null;
+    name?: string | null;
+    staffRole?: string | null;
+  } | null;
+
+  changedByStaff?: {
+    id: string;
+    staffCode?: string | null;
+    name?: string | null;
+    staffRole?: string | null;
+  } | null;
+};
+
 type SubAgent = {
   id: string;
   userId?: string;
@@ -41,14 +90,55 @@ type SubAgent = {
 
   isActive?: boolean;
 
+  assignedStaffId?: string | null;
+
+  assignedStaff?: {
+    id: string;
+    staffCode?: string | null;
+    name?: string | null;
+    staffRole?: string | null;
+    designation?: string | null;
+    department?: string | null;
+    isActive?: boolean;
+  } | null;
+
+  assignmentType?:
+    | "STAFF"
+    | "AGENT_DIRECT"
+    | string;
+
+  assignmentHistory?: AssignmentHistory[];
+
   createdAt?: string | null;
   updatedAt?: string | null;
+
+  _count?: {
+    customers?: number;
+    policies?: number;
+  };
 };
 
 type FilterType =
   | "ALL"
   | "ACTIVE"
-  | "INACTIVE";
+  | "INACTIVE"
+  | "AGENT_DIRECT"
+  | "STAFF_ASSIGNED";
+
+type ApiResponse = {
+  success?: boolean;
+  message?: string;
+  subAgents?: SubAgent[];
+  subAgent?: SubAgent;
+};
+
+type StaffApiResponse = {
+  success?: boolean;
+  message?: string;
+  staffs?: Staff[];
+  staff?: Staff[];
+  data?: Staff[];
+};
 
 /* -------------------------------------------------------------------------- */
 /* HELPERS                                                                    */
@@ -110,6 +200,55 @@ function formatDate(
   );
 }
 
+function formatDateTime(
+  value?: string | null
+) {
+  if (!value) {
+    return "-";
+  }
+
+  const date =
+    new Date(value);
+
+  if (
+    Number.isNaN(
+      date.getTime()
+    )
+  ) {
+    return "-";
+  }
+
+  return date.toLocaleString(
+    "en-IN",
+    {
+      day: "2-digit",
+      month: "short",
+      year: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: true,
+    }
+  );
+}
+
+function staffLabel(
+  staff?: {
+    staffCode?: string | null;
+    name?: string | null;
+  } | null
+) {
+  if (!staff) {
+    return "Agent Direct";
+  }
+
+  return [
+    staff.staffCode,
+    staff.name,
+  ]
+    .filter(Boolean)
+    .join(" - ");
+}
+
 /* -------------------------------------------------------------------------- */
 /* PAGE                                                                       */
 /* -------------------------------------------------------------------------- */
@@ -135,6 +274,14 @@ export default function SubAgentsPage() {
     );
 
   const [
+    staffs,
+    setStaffs,
+  ] =
+    useState<Staff[]>(
+      []
+    );
+
+  const [
     loading,
     setLoading,
   ] =
@@ -143,6 +290,12 @@ export default function SubAgentsPage() {
   const [
     message,
     setMessage,
+  ] =
+    useState("");
+
+  const [
+    successMessage,
+    setSuccessMessage,
   ] =
     useState("");
 
@@ -160,6 +313,60 @@ export default function SubAgentsPage() {
       "ALL"
     );
 
+  const [
+    staffFilter,
+    setStaffFilter,
+  ] =
+    useState("");
+
+  const [
+    transferTarget,
+    setTransferTarget,
+  ] =
+    useState<SubAgent | null>(
+      null
+    );
+
+  const [
+    transferStaffId,
+    setTransferStaffId,
+  ] =
+    useState("");
+
+  const [
+    transferReason,
+    setTransferReason,
+  ] =
+    useState("");
+
+  const [
+    transferSaving,
+    setTransferSaving,
+  ] =
+    useState(false);
+
+  const [
+    historyTarget,
+    setHistoryTarget,
+  ] =
+    useState<SubAgent | null>(
+      null
+    );
+
+  const [
+    historyItems,
+    setHistoryItems,
+  ] =
+    useState<AssignmentHistory[]>(
+      []
+    );
+
+  const [
+    historyLoading,
+    setHistoryLoading,
+  ] =
+    useState(false);
+
   /* ------------------------------------------------------------------------ */
   /* LOAD SUB AGENTS                                                          */
   /* ------------------------------------------------------------------------ */
@@ -170,15 +377,83 @@ export default function SubAgentsPage() {
         userId: string
       ) => {
         try {
-          setLoading(
-            true
-          );
-
+          setLoading(true);
           setMessage("");
 
           const response =
             await fetch(
               `/api/sub-agents?userId=${encodeURIComponent(
+                userId
+              )}&activeOnly=false`,
+              {
+                method: "GET",
+                cache:
+                  "no-store",
+              }
+            );
+
+          let data:
+            ApiResponse =
+            {};
+
+          try {
+            data =
+              await response.json();
+          } catch {
+            data = {};
+          }
+
+          if (
+            !response.ok ||
+            data.success ===
+              false
+          ) {
+            throw new Error(
+              data.message ||
+                "Unable to load sub agents."
+            );
+          }
+
+          setSubAgents(
+            Array.isArray(
+              data.subAgents
+            )
+              ? data.subAgents
+              : []
+          );
+        } catch (error) {
+          console.error(
+            "LOAD SUB AGENTS ERROR:",
+            error
+          );
+
+          setSubAgents([]);
+
+          setMessage(
+            error instanceof Error
+              ? error.message
+              : "Unable to load sub agents."
+          );
+        } finally {
+          setLoading(false);
+        }
+      },
+      []
+    );
+
+  /* ------------------------------------------------------------------------ */
+  /* LOAD STAFF                                                               */
+  /* ------------------------------------------------------------------------ */
+
+  const loadStaff =
+    useCallback(
+      async (
+        userId: string
+      ) => {
+        try {
+          const response =
+            await fetch(
+              `/api/staff?userId=${encodeURIComponent(
                 userId
               )}`,
               {
@@ -188,7 +463,9 @@ export default function SubAgentsPage() {
               }
             );
 
-          let data: any = {};
+          let data:
+            StaffApiResponse =
+            {};
 
           try {
             data =
@@ -197,93 +474,50 @@ export default function SubAgentsPage() {
             data = {};
           }
 
-          if (!response.ok) {
-            throw new Error(
-              data.message ||
-                "Unable to load sub agents."
-            );
-          }
-
           if (
+            !response.ok ||
             data.success ===
-            false
+              false
           ) {
             throw new Error(
               data.message ||
-                "Unable to load sub agents."
+                "Unable to load Staff."
             );
           }
 
-          if (
+          const list =
             Array.isArray(
-              data
+              data.staffs
             )
-          ) {
-            setSubAgents(
-              data
-            );
+              ? data.staffs
+              : Array.isArray(
+                    data.staff
+                  )
+                ? data.staff
+                : Array.isArray(
+                      data.data
+                    )
+                  ? data.data
+                  : [];
 
-            return;
-          }
-
-          if (
-            Array.isArray(
-              data.subAgents
+          setStaffs(
+            list.filter(
+              (item) =>
+                item.isActive !==
+                false
             )
-          ) {
-            setSubAgents(
-              data.subAgents
-            );
-
-            return;
-          }
-
-          if (
-            Array.isArray(
-              data.subagents
-            )
-          ) {
-            setSubAgents(
-              data.subagents
-            );
-
-            return;
-          }
-
-          if (
-            Array.isArray(
-              data.data
-            )
-          ) {
-            setSubAgents(
-              data.data
-            );
-
-            return;
-          }
-
-          setSubAgents(
-            []
           );
         } catch (error) {
           console.error(
-            "LOAD SUB AGENTS ERROR:",
+            "LOAD STAFF ERROR:",
             error
           );
 
-          setSubAgents(
-            []
-          );
-
-          setMessage(
-            error instanceof Error
-              ? error.message
-              : "Unable to load sub agents."
-          );
-        } finally {
-          setLoading(
-            false
-          );
+          /*
+           * Sub-Agent page remains usable even if
+           * the Staff list cannot be loaded.
+           */
+          setStaffs([]);
         }
       },
       []
@@ -330,18 +564,21 @@ export default function SubAgentsPage() {
         return;
       }
 
-      setUser(
-        parsed
-      );
+      setUser(parsed);
 
       localStorage.setItem(
         "userId",
         parsed.id
       );
 
-      void loadSubAgents(
-        parsed.id
-      );
+      void Promise.all([
+        loadSubAgents(
+          parsed.id
+        ),
+        loadStaff(
+          parsed.id
+        ),
+      ]);
     } catch (error) {
       console.error(
         "LOAD USER ERROR:",
@@ -355,6 +592,7 @@ export default function SubAgentsPage() {
   }, [
     router,
     loadSubAgents,
+    loadStaff,
   ]);
 
   /* ------------------------------------------------------------------------ */
@@ -365,9 +603,7 @@ export default function SubAgentsPage() {
     useMemo(
       () =>
         subAgents.filter(
-          (
-            item
-          ) =>
+          (item) =>
             item.isActive !==
             false
         ).length,
@@ -380,11 +616,35 @@ export default function SubAgentsPage() {
     useMemo(
       () =>
         subAgents.filter(
-          (
-            item
-          ) =>
+          (item) =>
             item.isActive ===
             false
+        ).length,
+      [
+        subAgents,
+      ]
+    );
+
+  const agentDirectCount =
+    useMemo(
+      () =>
+        subAgents.filter(
+          (item) =>
+            !item.assignedStaffId
+        ).length,
+      [
+        subAgents,
+      ]
+    );
+
+  const staffAssignedCount =
+    useMemo(
+      () =>
+        subAgents.filter(
+          (item) =>
+            Boolean(
+              item.assignedStaffId
+            )
         ).length,
       [
         subAgents,
@@ -403,9 +663,7 @@ export default function SubAgentsPage() {
           .toLowerCase();
 
       return subAgents.filter(
-        (
-          item
-        ) => {
+        (item) => {
           if (
             filter ===
               "ACTIVE" &&
@@ -424,6 +682,30 @@ export default function SubAgentsPage() {
             return false;
           }
 
+          if (
+            filter ===
+              "AGENT_DIRECT" &&
+            item.assignedStaffId
+          ) {
+            return false;
+          }
+
+          if (
+            filter ===
+              "STAFF_ASSIGNED" &&
+            !item.assignedStaffId
+          ) {
+            return false;
+          }
+
+          if (
+            staffFilter &&
+            item.assignedStaffId !==
+              staffFilter
+          ) {
+            return false;
+          }
+
           if (!query) {
             return true;
           }
@@ -437,10 +719,16 @@ export default function SubAgentsPage() {
               item.email,
               item.district,
               item.state,
+              item.assignedStaff
+                ?.name,
+              item.assignedStaff
+                ?.staffCode,
+              item.assignedStaff
+                ?.designation,
+              item.assignedStaff
+                ?.department,
             ]
-              .filter(
-                Boolean
-              )
+              .filter(Boolean)
               .join(" ")
               .toLowerCase();
 
@@ -453,7 +741,238 @@ export default function SubAgentsPage() {
       subAgents,
       filter,
       search,
+      staffFilter,
     ]);
+
+  /* ------------------------------------------------------------------------ */
+  /* TRANSFER                                                                 */
+  /* ------------------------------------------------------------------------ */
+
+  function openTransfer(
+    subAgent: SubAgent
+  ) {
+    setTransferTarget(
+      subAgent
+    );
+
+    setTransferStaffId(
+      subAgent.assignedStaffId ||
+      ""
+    );
+
+    setTransferReason("");
+    setMessage("");
+    setSuccessMessage("");
+  }
+
+  function closeTransfer() {
+    if (
+      transferSaving
+    ) {
+      return;
+    }
+
+    setTransferTarget(null);
+    setTransferStaffId("");
+    setTransferReason("");
+  }
+
+  async function saveTransfer() {
+    if (
+      !transferTarget ||
+      !user?.id
+    ) {
+      return;
+    }
+
+    const currentStaffId =
+      transferTarget.assignedStaffId ||
+      "";
+
+    if (
+      currentStaffId ===
+      transferStaffId
+    ) {
+      setMessage(
+        "Please select a different Staff member or Agent Direct."
+      );
+
+      return;
+    }
+
+    try {
+      setTransferSaving(true);
+      setMessage("");
+      setSuccessMessage("");
+
+      const response =
+        await fetch(
+          "/api/sub-agents",
+          {
+            method:
+              "PATCH",
+
+            headers: {
+              "Content-Type":
+                "application/json",
+            },
+
+            body:
+              JSON.stringify({
+                action:
+                  "TRANSFER_STAFF",
+
+                userId:
+                  user.id,
+
+                subAgentId:
+                  transferTarget.id,
+
+                assignedStaffId:
+                  transferStaffId ||
+                  null,
+
+                reason:
+                  transferReason.trim() ||
+                  null,
+              }),
+          }
+        );
+
+      let data:
+        {
+          success?: boolean;
+          message?: string;
+          subAgent?: SubAgent;
+        } =
+        {};
+
+      try {
+        data =
+          await response.json();
+      } catch {
+        data = {};
+      }
+
+      if (
+        !response.ok ||
+        data.success ===
+          false
+      ) {
+        throw new Error(
+          data.message ||
+            "Unable to transfer Sub-Agent."
+        );
+      }
+
+      setSuccessMessage(
+        data.message ||
+          "Sub-Agent assignment updated successfully."
+      );
+
+      closeTransfer();
+
+      await loadSubAgents(
+        user.id
+      );
+    } catch (error) {
+      console.error(
+        "TRANSFER SUB AGENT ERROR:",
+        error
+      );
+
+      setMessage(
+        error instanceof Error
+          ? error.message
+          : "Unable to transfer Sub-Agent."
+      );
+    } finally {
+      setTransferSaving(false);
+    }
+  }
+
+  /* ------------------------------------------------------------------------ */
+  /* HISTORY                                                                  */
+  /* ------------------------------------------------------------------------ */
+
+  async function openHistory(
+    subAgent: SubAgent
+  ) {
+    if (!user?.id) {
+      return;
+    }
+
+    try {
+      setHistoryTarget(
+        subAgent
+      );
+
+      setHistoryItems([]);
+      setHistoryLoading(true);
+      setMessage("");
+
+      const response =
+        await fetch(
+          `/api/sub-agents?userId=${encodeURIComponent(
+            user.id
+          )}&subAgentId=${encodeURIComponent(
+            subAgent.id
+          )}&includeHistory=true`,
+          {
+            cache:
+              "no-store",
+          }
+        );
+
+      let data:
+        ApiResponse =
+        {};
+
+      try {
+        data =
+          await response.json();
+      } catch {
+        data = {};
+      }
+
+      if (
+        !response.ok ||
+        data.success ===
+          false
+      ) {
+        throw new Error(
+          data.message ||
+            "Unable to load assignment history."
+        );
+      }
+
+      setHistoryItems(
+        Array.isArray(
+          data.subAgent
+            ?.assignmentHistory
+        )
+          ? data.subAgent
+              ?.assignmentHistory ||
+              []
+          : []
+      );
+    } catch (error) {
+      console.error(
+        "LOAD SUB AGENT HISTORY ERROR:",
+        error
+      );
+
+      setHistoryItems([]);
+
+      setMessage(
+        error instanceof Error
+          ? error.message
+          : "Unable to load assignment history."
+      );
+    } finally {
+      setHistoryLoading(false);
+    }
+  }
 
   /* ------------------------------------------------------------------------ */
   /* UI                                                                       */
@@ -479,14 +998,14 @@ export default function SubAgentsPage() {
             </h1>
 
             <p className="mt-1 text-xs text-blue-200">
-              Manage your sub-agent network
+              Manage, assign and transfer your Sub-Agent network
             </p>
 
           </div>
 
           <Link
             href="/dashboard"
-            className="rounded-xl bg-white/10 px-4 py-2 text-sm font-black hover:bg-white/20"
+            className="rounded-xl bg-white/10 px-4 py-2 text-sm font-black text-white hover:bg-white/20"
           >
             ← Dashboard
           </Link>
@@ -501,92 +1020,100 @@ export default function SubAgentsPage() {
 
         {/* SUMMARY */}
 
-        <div className="grid grid-cols-3 gap-3">
+        <div className="grid grid-cols-2 gap-3 md:grid-cols-5">
 
-          <button
-            type="button"
-            onClick={() =>
-              setFilter(
-                "ALL"
-              )
+          <SummaryButton
+            label="Total"
+            value={
+              subAgents.length
             }
-            className={`rounded-2xl border p-4 text-left shadow-sm ${
-              filter ===
-              "ALL"
-                ? "border-blue-300 bg-blue-50"
-                : "bg-white"
-            }`}
-          >
+            active={
+              filter === "ALL"
+            }
+            onClick={() =>
+              setFilter("ALL")
+            }
+            activeClass="border-blue-300 bg-blue-50"
+            valueClass="text-slate-950"
+          />
 
-            <p className="text-xs font-bold text-slate-500">
-              Total
-            </p>
-
-            <p className="mt-1 text-2xl font-black text-slate-950">
-              {
-                subAgents.length
-              }
-            </p>
-
-          </button>
-
-          <button
-            type="button"
+          <SummaryButton
+            label="Active"
+            value={
+              activeCount
+            }
+            active={
+              filter === "ACTIVE"
+            }
             onClick={() =>
               setFilter(
                 "ACTIVE"
               )
             }
-            className={`rounded-2xl border p-4 text-left shadow-sm ${
-              filter ===
-              "ACTIVE"
-                ? "border-emerald-300 bg-emerald-50"
-                : "bg-white"
-            }`}
-          >
+            activeClass="border-emerald-300 bg-emerald-50"
+            valueClass="text-emerald-700"
+          />
 
-            <p className="text-xs font-bold text-emerald-700">
-              Active
-            </p>
-
-            <p className="mt-1 text-2xl font-black text-emerald-700">
-              {activeCount}
-            </p>
-
-          </button>
-
-          <button
-            type="button"
+          <SummaryButton
+            label="Inactive"
+            value={
+              inactiveCount
+            }
+            active={
+              filter === "INACTIVE"
+            }
             onClick={() =>
               setFilter(
                 "INACTIVE"
               )
             }
-            className={`rounded-2xl border p-4 text-left shadow-sm ${
+            activeClass="border-red-300 bg-red-50"
+            valueClass="text-red-700"
+          />
+
+          <SummaryButton
+            label="Agent Direct"
+            value={
+              agentDirectCount
+            }
+            active={
               filter ===
-              "INACTIVE"
-                ? "border-red-300 bg-red-50"
-                : "bg-white"
-            }`}
-          >
+              "AGENT_DIRECT"
+            }
+            onClick={() =>
+              setFilter(
+                "AGENT_DIRECT"
+              )
+            }
+            activeClass="border-amber-300 bg-amber-50"
+            valueClass="text-amber-700"
+          />
 
-            <p className="text-xs font-bold text-red-700">
-              Inactive
-            </p>
-
-            <p className="mt-1 text-2xl font-black text-red-700">
-              {inactiveCount}
-            </p>
-
-          </button>
+          <SummaryButton
+            label="With Staff"
+            value={
+              staffAssignedCount
+            }
+            active={
+              filter ===
+              "STAFF_ASSIGNED"
+            }
+            onClick={() =>
+              setFilter(
+                "STAFF_ASSIGNED"
+              )
+            }
+            activeClass="border-violet-300 bg-violet-50"
+            valueClass="text-violet-700"
+          />
 
         </div>
 
-        {/* SEARCH + ADD */}
+        {/* SEARCH + FILTER + ADD */}
 
         <div className="mt-5 rounded-3xl border bg-white p-4 shadow-sm">
 
-          <div className="flex flex-col gap-3 sm:flex-row">
+          <div className="grid gap-3 md:grid-cols-[1fr_260px_auto]">
 
             <input
               value={search}
@@ -597,9 +1124,45 @@ export default function SubAgentsPage() {
                   event.target.value
                 )
               }
-              placeholder="Search name, code, mobile, district..."
-              className="min-w-0 flex-1 rounded-xl border-2 border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-900 outline-none focus:border-blue-600"
+              placeholder="Search name, code, mobile, district or Staff..."
+              className="min-w-0 rounded-xl border-2 border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-900 outline-none focus:border-blue-600"
             />
+
+            <select
+              value={
+                staffFilter
+              }
+              onChange={(
+                event
+              ) =>
+                setStaffFilter(
+                  event.target.value
+                )
+              }
+              className="rounded-xl border-2 border-slate-200 bg-white px-4 py-3 text-sm font-bold text-slate-900 outline-none focus:border-blue-600"
+            >
+              <option value="">
+                All Staff / Agent Direct
+              </option>
+
+              {staffs.map(
+                (staff) => (
+                  <option
+                    key={
+                      staff.id
+                    }
+                    value={
+                      staff.id
+                    }
+                  >
+                    {staffLabel(
+                      staff
+                    )}
+                  </option>
+                )
+              )}
+
+            </select>
 
             <Link
               href="/sub-agents/add"
@@ -610,13 +1173,37 @@ export default function SubAgentsPage() {
 
           </div>
 
+          <div className="mt-3 flex flex-wrap gap-2">
+
+            <button
+              type="button"
+              onClick={() => {
+                setFilter("ALL");
+                setStaffFilter("");
+                setSearch("");
+              }}
+              className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs font-black text-slate-700"
+            >
+              Clear Filters
+            </button>
+
+          </div>
+
         </div>
 
-        {/* MESSAGE */}
+        {/* SUCCESS */}
+
+        {successMessage && (
+          <div className="mt-4 rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-sm font-bold text-emerald-800">
+            ✅ {successMessage}
+          </div>
+        )}
+
+        {/* ERROR */}
 
         {message && (
           <div className="mt-4 rounded-2xl border border-red-200 bg-red-50 p-4 text-sm font-bold text-red-700">
-            {message}
+            ⚠️ {message}
           </div>
         )}
 
@@ -626,7 +1213,7 @@ export default function SubAgentsPage() {
 
           {loading ? (
             <div className="rounded-3xl border bg-white p-10 text-center font-bold text-slate-600">
-              Loading sub agents...
+              Loading Sub-Agents...
             </div>
           ) : filteredSubAgents.length ===
             0 ? (
@@ -641,7 +1228,7 @@ export default function SubAgentsPage() {
               </h2>
 
               <p className="mt-2 text-sm text-slate-500">
-                Add a new sub agent to start building your network.
+                Add a new Sub-Agent or clear the current filters.
               </p>
 
               <Link
@@ -656,9 +1243,7 @@ export default function SubAgentsPage() {
             <div className="space-y-3">
 
               {filteredSubAgents.map(
-                (
-                  item
-                ) => {
+                (item) => {
                   const phone =
                     cleanPhone(
                       item.phone
@@ -670,6 +1255,11 @@ export default function SubAgentsPage() {
                         item.phone
                     );
 
+                  const assigned =
+                    Boolean(
+                      item.assignedStaffId
+                    );
+
                   return (
                     <article
                       key={
@@ -678,7 +1268,7 @@ export default function SubAgentsPage() {
                       className="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm"
                     >
 
-                      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                      <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
 
                         {/* INFO */}
 
@@ -687,9 +1277,7 @@ export default function SubAgentsPage() {
                           <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-violet-100 text-lg font-black text-violet-800">
                             {item.name
                               ?.trim()
-                              ?.charAt(
-                                0
-                              )
+                              ?.charAt(0)
                               ?.toUpperCase() ||
                               "S"}
                           </div>
@@ -699,9 +1287,7 @@ export default function SubAgentsPage() {
                             <div className="flex flex-wrap items-center gap-2">
 
                               <h2 className="font-black text-slate-950">
-                                {
-                                  item.name
-                                }
+                                {item.name}
                               </h2>
 
                               <span
@@ -722,28 +1308,19 @@ export default function SubAgentsPage() {
 
                             {item.code && (
                               <p className="mt-1 text-xs font-bold text-violet-700">
-                                Code:{" "}
-                                {
-                                  item.code
-                                }
+                                Code: {item.code}
                               </p>
                             )}
 
                             {item.phone && (
                               <p className="mt-1 text-sm font-semibold text-slate-700">
-                                📱{" "}
-                                {
-                                  item.phone
-                                }
+                                📱 {item.phone}
                               </p>
                             )}
 
                             {item.email && (
                               <p className="mt-1 break-all text-xs text-slate-500">
-                                ✉️{" "}
-                                {
-                                  item.email
-                                }
+                                ✉️ {item.email}
                               </p>
                             )}
 
@@ -764,14 +1341,74 @@ export default function SubAgentsPage() {
                               </p>
                             )}
 
-                            {item.createdAt && (
-                              <p className="mt-1 text-[11px] text-slate-400">
-                                Added{" "}
-                                {formatDate(
-                                  item.createdAt
-                                )}
+                            <div
+                              className={`mt-3 rounded-xl border p-3 ${
+                                assigned
+                                  ? "border-violet-200 bg-violet-50"
+                                  : "border-amber-200 bg-amber-50"
+                              }`}
+                            >
+                              <p
+                                className={`text-[10px] font-black uppercase tracking-wide ${
+                                  assigned
+                                    ? "text-violet-700"
+                                    : "text-amber-700"
+                                }`}
+                              >
+                                Current Assignment
                               </p>
-                            )}
+
+                              <p
+                                className={`mt-1 text-sm font-black ${
+                                  assigned
+                                    ? "text-violet-950"
+                                    : "text-amber-950"
+                                }`}
+                              >
+                                {assigned
+                                  ? `👨‍💼 ${staffLabel(
+                                      item.assignedStaff
+                                    )}`
+                                  : "👤 Agent Direct"}
+                              </p>
+
+                              {item.assignedStaff
+                                ?.designation && (
+                                <p className="mt-1 text-xs font-semibold text-violet-700">
+                                  {
+                                    item.assignedStaff.designation
+                                  }
+                                </p>
+                              )}
+
+                            </div>
+
+                            <div className="mt-2 flex flex-wrap gap-3 text-[11px] font-semibold text-slate-500">
+
+                              <span>
+                                Customers:{" "}
+                                {item._count
+                                  ?.customers ??
+                                  0}
+                              </span>
+
+                              <span>
+                                Policies:{" "}
+                                {item._count
+                                  ?.policies ??
+                                  0}
+                              </span>
+
+                              {item.createdAt && (
+                                <span>
+                                  Added{" "}
+                                  {formatDate(
+                                    item.createdAt
+                                  )}
+                                </span>
+                              )}
+
+                            </div>
 
                           </div>
 
@@ -779,7 +1416,7 @@ export default function SubAgentsPage() {
 
                         {/* ACTIONS */}
 
-                        <div className="flex flex-wrap gap-2">
+                        <div className="flex flex-wrap gap-2 lg:max-w-[420px] lg:justify-end">
 
                           {phone && (
                             <a
@@ -800,6 +1437,32 @@ export default function SubAgentsPage() {
                               WhatsApp
                             </a>
                           )}
+
+                          <button
+                            type="button"
+                            onClick={() =>
+                              openTransfer(
+                                item
+                              )
+                            }
+                            className="rounded-xl bg-blue-700 px-4 py-2 text-xs font-black text-white"
+                          >
+                            {assigned
+                              ? "Transfer"
+                              : "Assign Staff"}
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() =>
+                              void openHistory(
+                                item
+                              )
+                            }
+                            className="rounded-xl border border-slate-300 bg-white px-4 py-2 text-xs font-black text-slate-700"
+                          >
+                            History
+                          </button>
 
                           <Link
                             href={`/sub-agents/${item.id}`}
@@ -823,6 +1486,354 @@ export default function SubAgentsPage() {
         </div>
 
       </section>
+
+      {/* TRANSFER MODAL */}
+
+      {transferTarget && (
+        <div className="fixed inset-0 z-[80] flex items-end justify-center bg-black/50 p-3 sm:items-center">
+
+          <div className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-3xl bg-white shadow-2xl">
+
+            <div className="border-b p-5">
+
+              <div className="flex items-start justify-between gap-3">
+
+                <div>
+
+                  <p className="text-xs font-black uppercase tracking-wide text-blue-700">
+                    Sub-Agent Assignment
+                  </p>
+
+                  <h2 className="mt-1 text-xl font-black text-slate-950">
+                    {transferTarget.code
+                      ? `${transferTarget.code} - `
+                      : ""}
+                    {transferTarget.name}
+                  </h2>
+
+                </div>
+
+                <button
+                  type="button"
+                  onClick={
+                    closeTransfer
+                  }
+                  disabled={
+                    transferSaving
+                  }
+                  className="rounded-xl bg-slate-100 px-3 py-2 font-black text-slate-700"
+                >
+                  ✕
+                </button>
+
+              </div>
+
+            </div>
+
+            <div className="space-y-4 p-5">
+
+              <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+
+                <p className="text-xs font-black uppercase text-slate-500">
+                  Current Assignment
+                </p>
+
+                <p className="mt-1 font-black text-slate-950">
+                  {transferTarget.assignedStaffId
+                    ? staffLabel(
+                        transferTarget.assignedStaff
+                      )
+                    : "Agent Direct"}
+                </p>
+
+              </div>
+
+              <div>
+
+                <label className="block text-sm font-black text-slate-950">
+                  Transfer To *
+                </label>
+
+                <select
+                  value={
+                    transferStaffId
+                  }
+                  onChange={(
+                    event
+                  ) =>
+                    setTransferStaffId(
+                      event.target.value
+                    )
+                  }
+                  className="mt-2 w-full rounded-xl border border-slate-300 bg-white px-4 py-3 font-semibold text-slate-950"
+                >
+                  <option value="">
+                    👤 Agent Direct
+                  </option>
+
+                  {staffs.map(
+                    (staff) => (
+                      <option
+                        key={
+                          staff.id
+                        }
+                        value={
+                          staff.id
+                        }
+                      >
+                        👨‍💼{" "}
+                        {staffLabel(
+                          staff
+                        )}
+                        {staff.staffRole ===
+                        "SUPERVISOR"
+                          ? " (Supervisor)"
+                          : ""}
+                      </option>
+                    )
+                  )}
+
+                </select>
+
+              </div>
+
+              <div>
+
+                <label className="block text-sm font-black text-slate-950">
+                  Transfer Reason
+                </label>
+
+                <textarea
+                  rows={3}
+                  value={
+                    transferReason
+                  }
+                  onChange={(
+                    event
+                  ) =>
+                    setTransferReason(
+                      event.target.value
+                    )
+                  }
+                  placeholder="Example: Territory change, workload balance, handled directly by Agent..."
+                  className="mt-2 w-full rounded-xl border border-slate-300 px-4 py-3 font-semibold text-slate-950"
+                />
+
+              </div>
+
+              <div className="rounded-xl border border-blue-200 bg-blue-50 p-4 text-sm font-semibold text-blue-800">
+                Existing policies and historical production are not rewritten. This changes the Sub-Agent's current assignment and saves a permanent transfer-history record.
+              </div>
+
+            </div>
+
+            <div className="flex gap-3 border-t p-5">
+
+              <button
+                type="button"
+                onClick={
+                  closeTransfer
+                }
+                disabled={
+                  transferSaving
+                }
+                className="rounded-xl border border-slate-300 bg-white px-5 py-3 font-black text-slate-700"
+              >
+                Cancel
+              </button>
+
+              <button
+                type="button"
+                onClick={() =>
+                  void saveTransfer()
+                }
+                disabled={
+                  transferSaving
+                }
+                className="flex-1 rounded-xl bg-blue-700 px-5 py-3 font-black text-white disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {transferSaving
+                  ? "Saving..."
+                  : transferStaffId
+                    ? "Save Assignment"
+                    : "Move to Agent Direct"}
+              </button>
+
+            </div>
+
+          </div>
+
+        </div>
+      )}
+
+      {/* HISTORY MODAL */}
+
+      {historyTarget && (
+        <div className="fixed inset-0 z-[85] flex items-end justify-center bg-black/50 p-3 sm:items-center">
+
+          <div className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-3xl bg-white shadow-2xl">
+
+            <div className="sticky top-0 z-10 flex items-start justify-between gap-3 border-b bg-white p-5">
+
+              <div>
+
+                <p className="text-xs font-black uppercase tracking-wide text-violet-700">
+                  Assignment History
+                </p>
+
+                <h2 className="mt-1 text-xl font-black text-slate-950">
+                  {historyTarget.code
+                    ? `${historyTarget.code} - `
+                    : ""}
+                  {historyTarget.name}
+                </h2>
+
+              </div>
+
+              <button
+                type="button"
+                onClick={() =>
+                  setHistoryTarget(
+                    null
+                  )
+                }
+                className="rounded-xl bg-slate-100 px-3 py-2 font-black text-slate-700"
+              >
+                ✕
+              </button>
+
+            </div>
+
+            <div className="p-5">
+
+              <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+
+                <p className="text-xs font-black uppercase text-slate-500">
+                  Current Assignment
+                </p>
+
+                <p className="mt-1 font-black text-slate-950">
+                  {historyTarget.assignedStaffId
+                    ? staffLabel(
+                        historyTarget.assignedStaff
+                      )
+                    : "Agent Direct"}
+                </p>
+
+              </div>
+
+              {historyLoading ? (
+                <div className="mt-4 rounded-xl border p-6 text-center font-bold text-slate-500">
+                  Loading assignment history...
+                </div>
+              ) : historyItems.length ===
+                0 ? (
+                <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-5 text-center">
+
+                  <p className="font-black text-amber-900">
+                    No transfer history yet
+                  </p>
+
+                  <p className="mt-1 text-sm font-semibold text-amber-700">
+                    This Sub-Agent has not been transferred since assignment tracking was enabled.
+                  </p>
+
+                </div>
+              ) : (
+                <div className="mt-4 space-y-3">
+
+                  {historyItems.map(
+                    (
+                      item,
+                      index
+                    ) => (
+                      <div
+                        key={
+                          item.id
+                        }
+                        className="rounded-2xl border border-slate-200 bg-white p-4"
+                      >
+
+                        <div className="flex flex-wrap items-start justify-between gap-3">
+
+                          <div>
+
+                            <p className="text-xs font-black uppercase tracking-wide text-slate-500">
+                              {index ===
+                              0
+                                ? "Latest Transfer"
+                                : "Transfer"}
+                            </p>
+
+                            <p className="mt-1 font-black text-slate-950">
+                              {staffLabel(
+                                item.fromStaff
+                              )}
+                              {" → "}
+                              {staffLabel(
+                                item.toStaff
+                              )}
+                            </p>
+
+                          </div>
+
+                          <span className="rounded-lg bg-violet-100 px-2.5 py-1 text-xs font-black text-violet-800">
+                            {formatDateTime(
+                              item.createdAt
+                            )}
+                          </span>
+
+                        </div>
+
+                        <div className="mt-3 grid gap-2 text-sm md:grid-cols-2">
+
+                          <div className="rounded-xl bg-slate-50 p-3">
+
+                            <p className="text-[10px] font-black uppercase text-slate-500">
+                              Changed By
+                            </p>
+
+                            <p className="mt-1 font-black text-slate-900">
+                              {item.changedByName ||
+                                item.changedByStaff?.name ||
+                                "Previous record"}
+                            </p>
+
+                            <p className="mt-1 text-xs font-bold text-slate-500">
+                              {item.changedByType ||
+                                "-"}
+                            </p>
+
+                          </div>
+
+                          <div className="rounded-xl bg-slate-50 p-3">
+
+                            <p className="text-[10px] font-black uppercase text-slate-500">
+                              Reason
+                            </p>
+
+                            <p className="mt-1 whitespace-pre-wrap font-semibold text-slate-800">
+                              {item.reason ||
+                                "No reason entered"}
+                            </p>
+
+                          </div>
+
+                        </div>
+
+                      </div>
+                    )
+                  )}
+
+                </div>
+              )}
+
+            </div>
+
+          </div>
+
+        </div>
+      )}
 
       {/* MOBILE NAV */}
 
@@ -900,5 +1911,49 @@ export default function SubAgentsPage() {
       </nav>
 
     </main>
+  );
+}
+
+/* -------------------------------------------------------------------------- */
+/* SUMMARY BUTTON                                                             */
+/* -------------------------------------------------------------------------- */
+
+function SummaryButton({
+  label,
+  value,
+  active,
+  onClick,
+  activeClass,
+  valueClass,
+}: {
+  label: string;
+  value: number;
+  active: boolean;
+  onClick: () => void;
+  activeClass: string;
+  valueClass: string;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={
+        onClick
+      }
+      className={`rounded-2xl border p-4 text-left shadow-sm ${
+        active
+          ? activeClass
+          : "bg-white"
+      }`}
+    >
+      <p className="text-xs font-bold text-slate-500">
+        {label}
+      </p>
+
+      <p
+        className={`mt-1 text-2xl font-black ${valueClass}`}
+      >
+        {value}
+      </p>
+    </button>
   );
 }
