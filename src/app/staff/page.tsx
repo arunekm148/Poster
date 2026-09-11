@@ -1919,6 +1919,13 @@ export default function StaffPage() {
             </Link>
 
             <Link
+              href="/staff/offices"
+              className="rounded-xl bg-cyan-700 px-4 py-2.5 text-sm font-black text-white shadow-sm hover:bg-cyan-800"
+            >
+              + Add Office
+            </Link>
+
+            <Link
               href="/staff/add"
               className="rounded-xl bg-blue-700 px-4 py-2.5 text-sm font-black text-white shadow-sm hover:bg-blue-800"
             >
@@ -2001,6 +2008,13 @@ export default function StaffPage() {
             className="rounded-xl bg-blue-700 px-4 py-2.5 text-xs font-black text-white"
           >
             ➕ Add Staff
+          </Link>
+
+          <Link
+            href="/staff/offices"
+            className="rounded-xl bg-cyan-700 px-4 py-2.5 text-xs font-black text-white"
+          >
+            🏢 Add / Manage Offices
           </Link>
 
           <Link
@@ -2751,11 +2765,11 @@ export default function StaffPage() {
             />
 
             <AttendanceAdminCard
-              href="/staff/attendance/location"
-              emoji="📍"
-              title="GPS & Office Location"
-              description="Configure office coordinates and attendance radius."
-              actionLabel="Configure Location"
+              href="/staff/offices"
+              emoji="🏢"
+              title="Offices & GPS"
+              description="Create branches, set office GPS coordinates and attendance radius."
+              actionLabel="Manage Offices"
             />
 
           </div>

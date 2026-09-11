@@ -556,6 +556,24 @@ useState(
 false
 );
 
+const [
+sharingPosterId,
+setSharingPosterId,
+] =
+useState<
+string | null
+>(
+null
+);
+
+const [
+sharingOwnPoster,
+setSharingOwnPoster,
+] =
+useState(
+false
+);
+
 const fileInputRef =
 useRef<HTMLInputElement | null>(
 null
@@ -2985,6 +3003,419 @@ return null;
 }
 
 /* ------------------------------------------------------------------------ */
+/* SHARE HELPERS */
+/* ------------------------------------------------------------------------ */
+
+function dataUrlToFile(
+dataUrl:
+string,
+
+fileName:
+string
+) {
+const parts =
+dataUrl.split(
+","
+);
+
+if (
+parts.length <
+2
+) {
+throw new Error(
+"Unable to prepare poster file."
+);
+}
+
+const header =
+parts[0];
+
+const data =
+parts
+.slice(
+1
+)
+.join(
+","
+);
+
+const mimeMatch =
+/data:([^;]+);base64/i.exec(
+header
+);
+
+const mimeType =
+mimeMatch?.[1] ||
+"image/png";
+
+const binary =
+window.atob(
+data
+);
+
+const bytes =
+new Uint8Array(
+binary.length
+);
+
+for (
+let index =
+0;
+index <
+binary.length;
+index +=
+1
+) {
+bytes[
+index
+] =
+binary.charCodeAt(
+index
+);
+}
+
+return new File(
+[
+bytes,
+],
+fileName,
+{
+type:
+mimeType,
+}
+);
+}
+
+function safePosterFileName(
+title:
+string
+) {
+const safeName =
+title
+.replace(
+/[^a-z0-9]/gi,
+"-"
+)
+.replace(
+/-+/g,
+"-"
+)
+.replace(
+/^-|-$/g,
+""
+)
+.toLowerCase();
+
+return `${
+safeName ||
+"insurance-poster"
+}-personalized.png`;
+}
+
+function openWhatsAppFallback(
+posterTitle:
+string
+) {
+const text =
+`Hi, please see this insurance poster: ${posterTitle}`;
+
+const whatsappUrl =
+`https://wa.me/?text=${encodeURIComponent(
+text
+)}`;
+
+const link =
+document.createElement(
+"a"
+);
+
+link.href =
+whatsappUrl;
+
+link.target =
+"_blank";
+
+link.rel =
+"noopener noreferrer";
+
+document.body.appendChild(
+link
+);
+
+link.click();
+
+document.body.removeChild(
+link
+);
+}
+
+async function sharePosterFile({
+image,
+title,
+}: {
+image:
+string;
+
+title:
+string;
+}) {
+const fileName =
+safePosterFileName(
+title
+);
+
+const file =
+dataUrlToFile(
+image,
+fileName
+);
+
+const shareData = {
+title,
+text:
+`Insurance poster: ${title}`,
+files: [
+file,
+],
+};
+
+if (
+navigator.share &&
+(
+!navigator.canShare ||
+navigator.canShare({
+files: [
+file,
+],
+})
+)
+) {
+try {
+await navigator.share(
+shareData
+);
+
+return {
+shared:
+true,
+
+usedFallback:
+false,
+};
+} catch (
+error
+) {
+if (
+error instanceof DOMException &&
+error.name ===
+"AbortError"
+) {
+return {
+shared:
+false,
+
+usedFallback:
+false,
+};
+}
+
+console.warn(
+"NATIVE SHARE FAILED:",
+error
+);
+}
+}
+
+/*
+ * Desktop browsers cannot reliably attach a generated local image
+ * directly into WhatsApp Web. In that case we download the personalized
+ * image first and open WhatsApp with the message ready.
+ */
+const downloadLink =
+document.createElement(
+"a"
+);
+
+downloadLink.href =
+image;
+
+downloadLink.download =
+fileName;
+
+document.body.appendChild(
+downloadLink
+);
+
+downloadLink.click();
+
+document.body.removeChild(
+downloadLink
+);
+
+openWhatsAppFallback(
+title
+);
+
+return {
+shared:
+false,
+
+usedFallback:
+true,
+};
+}
+
+/* ------------------------------------------------------------------------ */
+/* SHARE LIBRARY POSTER */
+/* ------------------------------------------------------------------------ */
+
+async function sharePoster(
+poster:
+Poster
+) {
+try {
+setSharingPosterId(
+poster.id
+);
+
+const company:
+| Company
+| null =
+poster.company
+? {
+id:
+poster.company
+.id ||
+"",
+
+name:
+poster.company
+.name ||
+"",
+
+logoUrl:
+poster.company
+.logoUrl ||
+null,
+}
+: getGeneralPosterCompany(
+poster.id
+);
+
+const image =
+await createPersonalizedPoster(
+poster.fileUrl,
+company
+);
+
+if (
+!image
+) {
+window.alert(
+"Unable to prepare poster for sharing."
+);
+
+return;
+}
+
+const result =
+await sharePosterFile({
+image,
+title:
+poster.title,
+});
+
+if (
+result.usedFallback
+) {
+setMessage(
+"✅ Personalized poster downloaded. WhatsApp opened — attach the downloaded poster and send."
+);
+}
+} catch (
+error
+) {
+console.error(
+"SHARE POSTER ERROR:",
+error
+);
+
+window.alert(
+"Unable to share poster."
+);
+} finally {
+setSharingPosterId(
+null
+);
+}
+}
+
+/* ------------------------------------------------------------------------ */
+/* SHARE OWN POSTER */
+/* ------------------------------------------------------------------------ */
+
+async function shareOwnPoster() {
+if (
+!uploadedPosterUrl
+) {
+return;
+}
+
+try {
+setSharingOwnPoster(
+true
+);
+
+const image =
+await createPersonalizedPoster(
+uploadedPosterUrl,
+uploadedPosterCompany
+);
+
+if (
+!image
+) {
+window.alert(
+"Unable to prepare your poster for sharing."
+);
+
+return;
+}
+
+const result =
+await sharePosterFile({
+image,
+title:
+uploadedPosterTitle ||
+"My Insurance Poster",
+});
+
+if (
+result.usedFallback
+) {
+setMessage(
+"✅ Personalized poster downloaded. WhatsApp opened — attach the downloaded poster and send."
+);
+}
+} catch (
+error
+) {
+console.error(
+"SHARE OWN POSTER ERROR:",
+error
+);
+
+window.alert(
+"Unable to share your poster."
+);
+} finally {
+setSharingOwnPoster(
+false
+);
+}
+}
+
+/* ------------------------------------------------------------------------ */
 /* RECORD DOWNLOAD */
 /* ------------------------------------------------------------------------ */
 
@@ -3154,22 +3585,6 @@ window.alert(
 return;
 }
 
-const safeName =
-poster.title
-.replace(
-/[^a-z0-9]/gi,
-"-"
-)
-.replace(
-/-+/g,
-"-"
-)
-.replace(
-/^-|-$/g,
-""
-)
-.toLowerCase();
-
 const link =
 document.createElement(
 "a"
@@ -3179,10 +3594,9 @@ link.href =
 image;
 
 link.download =
-`${
-safeName ||
-"poster"
-}-personalized.png`;
+safePosterFileName(
+poster.title
+);
 
 document.body.appendChild(
 link
@@ -3247,22 +3661,6 @@ window.alert(
 return;
 }
 
-const safeName =
-uploadedPosterTitle
-.replace(
-/[^a-z0-9]/gi,
-"-"
-)
-.replace(
-/-+/g,
-"-"
-)
-.replace(
-/^-|-$/g,
-""
-)
-.toLowerCase();
-
 const link =
 document.createElement(
 "a"
@@ -3272,10 +3670,10 @@ link.href =
 image;
 
 link.download =
-`${
-safeName ||
-"my-poster"
-}-personalized.png`;
+safePosterFileName(
+uploadedPosterTitle ||
+"My Poster"
+);
 
 document.body.appendChild(
 link
@@ -4018,11 +4416,13 @@ className="flex-1 rounded-xl bg-blue-700 px-5 py-3.5 font-black text-white shado
 </button>
 
 {!isAdmin && (
+<>
 <button
 type="button"
 disabled={
 !uploadedPosterUrl ||
-preparingOwnPoster
+preparingOwnPoster ||
+sharingOwnPoster
 }
 onClick={() =>
 void downloadOwnPoster()
@@ -4033,6 +4433,24 @@ className="flex-1 rounded-xl bg-emerald-700 px-5 py-3.5 font-black text-white sh
 ? "Preparing..."
 : "⬇ Download My Personalized Poster"}
 </button>
+
+<button
+type="button"
+disabled={
+!uploadedPosterUrl ||
+preparingOwnPoster ||
+sharingOwnPoster
+}
+onClick={() =>
+void shareOwnPoster()
+}
+className="flex-1 rounded-xl bg-green-600 px-5 py-3.5 font-black text-white shadow-md hover:bg-green-700 disabled:cursor-not-allowed disabled:bg-slate-300"
+>
+{sharingOwnPoster
+? "Preparing Share..."
+: "🟢 Share on WhatsApp"}
+</button>
+</>
 )}
 
 </div>
@@ -4869,7 +5287,7 @@ metric.userRating
 className={`mt-4 grid gap-2 ${
 isAdmin
 ? "grid-cols-2"
-: "grid-cols-1"
+: "grid-cols-2"
 }`}
 >
 
@@ -4877,6 +5295,8 @@ isAdmin
 type="button"
 disabled={
 preparingPosterId ===
+poster.id ||
+sharingPosterId ===
 poster.id
 }
 onClick={() =>
@@ -4891,6 +5311,29 @@ poster.id
 ? "Preparing..."
 : "⬇ Download"}
 </button>
+
+{!isAdmin && (
+<button
+type="button"
+disabled={
+preparingPosterId ===
+poster.id ||
+sharingPosterId ===
+poster.id
+}
+onClick={() =>
+void sharePoster(
+poster
+)
+}
+className="rounded-xl bg-green-600 py-3 font-black text-white hover:bg-green-700 disabled:bg-slate-400"
+>
+{sharingPosterId ===
+poster.id
+? "Preparing..."
+: "🟢 WhatsApp"}
+</button>
+)}
 
 {isAdmin && (
 <button
