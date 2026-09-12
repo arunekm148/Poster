@@ -1,7 +1,5 @@
 import { NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
-import bcrypt from "bcryptjs";
-import crypto from "crypto";
 
 /* -------------------------------------------------------------------------- */
 /* HELPERS                                                                    */
@@ -11,66 +9,129 @@ function cleanString(value: unknown): string {
   return String(value ?? "").trim();
 }
 
-function cleanPhone(value: unknown): string {
-  return String(value ?? "")
-    .replace(/\D/g, "")
-    .trim();
-}
-
-function parseDate(value: unknown): Date | null {
-  const text = cleanString(value);
-
-  if (!text) {
-    return null;
-  }
-
-  const date = new Date(`${text}T00:00:00`);
-
-  return Number.isNaN(date.getTime())
-    ? null
-    : date;
-}
-
 function getErrorMessage(error: unknown): string {
   return error instanceof Error
     ? error.message
     : "Unknown server error";
 }
 
-function normalizeWorkMode(value: unknown) {
-  const mode =
-    cleanString(value).toUpperCase();
+function parseOptionalDecimal(
+  value: unknown
+): string | null {
+  const text = cleanString(value);
 
-  if (
-    mode === "WORK_FROM_HOME" ||
-    mode === "HYBRID" ||
-    mode === "FIELD"
-  ) {
-    return mode;
+  if (!text) {
+    return null;
   }
 
-  return "OFFICE";
+  const number = Number(text);
+
+  if (!Number.isFinite(number)) {
+    return null;
+  }
+
+  return String(number);
+}
+
+function parseRadius(
+  value: unknown
+): number {
+  const number = Number(value);
+
+  if (!Number.isFinite(number)) {
+    return 100;
+  }
+
+  return Math.max(
+    20,
+    Math.min(
+      5000,
+      Math.round(number)
+    )
+  );
+}
+
+async function ensureOwner(
+  userId: string
+) {
+  const owner =
+    await prisma.user.findUnique({
+      where: {
+        id: userId,
+      },
+      select: {
+        id: true,
+        isActive: true,
+      },
+    });
+
+  if (!owner) {
+    return {
+      ok: false as const,
+      response:
+        NextResponse.json(
+          {
+            success: false,
+            message:
+              "Agent account was not found.",
+          },
+          {
+            status: 404,
+          }
+        ),
+    };
+  }
+
+  if (!owner.isActive) {
+    return {
+      ok: false as const,
+      response:
+        NextResponse.json(
+          {
+            success: false,
+            message:
+              "Agent account is inactive.",
+          },
+          {
+            status: 403,
+          }
+        ),
+    };
+  }
+
+  return {
+    ok: true as const,
+    owner,
+  };
 }
 
 /* -------------------------------------------------------------------------- */
-/* GET STAFF                                                                  */
+/* GET OFFICES                                                                */
 /* -------------------------------------------------------------------------- */
 
-export async function GET(request: Request) {
+export async function GET(
+  request: Request
+) {
   try {
-    const { searchParams } =
-      new URL(request.url);
+    const {
+      searchParams,
+    } = new URL(
+      request.url
+    );
 
     const userId =
       cleanString(
-        searchParams.get("userId")
+        searchParams.get(
+          "userId"
+        )
       );
 
     if (!userId) {
       return NextResponse.json(
         {
           success: false,
-          message: "User ID is required.",
+          message:
+            "User ID is required.",
         },
         {
           status: 400,
@@ -78,41 +139,33 @@ export async function GET(request: Request) {
       );
     }
 
-    const owner =
-      await prisma.user.findUnique({
-        where: {
-          id: userId,
-        },
-        select: {
-          id: true,
-          isActive: true,
-        },
-      });
-
-    if (!owner) {
-      return NextResponse.json(
-        {
-          success: false,
-          message: "Agent account was not found.",
-        },
-        {
-          status: 404,
-        }
+    const ownerCheck =
+      await ensureOwner(
+        userId
       );
+
+    if (!ownerCheck.ok) {
+      return ownerCheck.response;
     }
 
-    const staff =
-      await prisma.staff.findMany({
+    const offices =
+      await prisma.office.findMany({
         where: {
           userId,
         },
 
         orderBy: [
           {
-            isActive: "desc",
+            isHeadOffice:
+              "desc",
           },
           {
-            name: "asc",
+            isActive:
+              "desc",
+          },
+          {
+            name:
+              "asc",
           },
         ],
 
@@ -120,72 +173,58 @@ export async function GET(request: Request) {
           id: true,
           userId: true,
 
-          officeId: true,
-
-          staffCode: true,
+          code: true,
           name: true,
-
-          phone: true,
-          whatsapp: true,
-          email: true,
-
-          staffRole: true,
-          workMode: true,
-
-          designation: true,
-          department: true,
-
-          supervisorId: true,
 
           address: true,
           district: true,
           state: true,
           pincode: true,
 
-          joiningDate: true,
-          notes: true,
+          latitude: true,
+          longitude: true,
 
-          loginEnabled: true,
+          radiusMeters: true,
+
+          isHeadOffice: true,
           isActive: true,
-
-          inactiveReason: true,
-          inactiveAt: true,
 
           createdAt: true,
           updatedAt: true,
 
-          office: {
-            select: {
-              id: true,
-              code: true,
-              name: true,
-              isHeadOffice: true,
-              isActive: true,
-            },
-          },
-
-          supervisor: {
-            select: {
-              id: true,
-              staffCode: true,
-              name: true,
-              staffRole: true,
-            },
-          },
-
           _count: {
             select: {
-              teamMembers: true,
+              staff: true,
               attendance: true,
             },
           },
         },
       });
 
+    const serialized =
+      offices.map(
+        (office) => ({
+          ...office,
+
+          latitude:
+            office.latitude ===
+            null
+              ? null
+              : office.latitude.toString(),
+
+          longitude:
+            office.longitude ===
+            null
+              ? null
+              : office.longitude.toString(),
+        })
+      );
+
     return NextResponse.json(
       {
         success: true,
-        staff,
+        offices:
+          serialized,
       },
       {
         status: 200,
@@ -193,7 +232,7 @@ export async function GET(request: Request) {
     );
   } catch (error) {
     console.error(
-      "GET STAFF FULL ERROR:",
+      "GET OFFICES ERROR:",
       error
     );
 
@@ -201,7 +240,9 @@ export async function GET(request: Request) {
       {
         success: false,
         message:
-          getErrorMessage(error),
+          getErrorMessage(
+            error
+          ),
       },
       {
         status: 500,
@@ -211,97 +252,73 @@ export async function GET(request: Request) {
 }
 
 /* -------------------------------------------------------------------------- */
-/* CREATE STAFF                                                               */
+/* CREATE OFFICE                                                              */
 /* -------------------------------------------------------------------------- */
 
-export async function POST(request: Request) {
+export async function POST(
+  request: Request
+) {
   try {
     const body =
       await request.json();
 
     const userId =
-      cleanString(body.userId);
-
-    const officeId =
-      cleanString(body.officeId) ||
-      null;
-
-    const staffCode =
       cleanString(
-        body.staffCode
+        body.userId
+      );
+
+    const code =
+      cleanString(
+        body.code
       ).toUpperCase();
 
     const name =
-      cleanString(body.name);
-
-    const phone =
-      cleanPhone(body.phone);
-
-    const password =
-      String(
-        body.password ?? ""
-      );
-
-    const whatsapp =
-      cleanPhone(body.whatsapp);
-
-    const email =
       cleanString(
-        body.email
-      ).toLowerCase();
-
-    const staffRole =
-      cleanString(
-        body.staffRole
-      ).toUpperCase() ===
-      "SUPERVISOR"
-        ? "SUPERVISOR"
-        : "STAFF";
-
-    const workMode =
-      normalizeWorkMode(
-        body.workMode
+        body.name
       );
-
-    const designation =
-      cleanString(
-        body.designation
-      );
-
-    const department =
-      cleanString(
-        body.department
-      );
-
-    const supervisorId =
-      staffRole === "SUPERVISOR"
-        ? null
-        : cleanString(
-            body.supervisorId
-          ) || null;
 
     const address =
-      cleanString(body.address);
-
-    const district =
-      cleanString(body.district);
-
-    const state =
-      cleanString(body.state);
-
-    const pincode =
-      cleanString(body.pincode);
-
-    const joiningDate =
-      parseDate(
-        body.joiningDate
+      cleanString(
+        body.address
       );
 
-    const notes =
-      cleanString(body.notes);
+    const district =
+      cleanString(
+        body.district
+      );
 
-    const loginEnabled =
-      body.loginEnabled !== false;
+    const state =
+      cleanString(
+        body.state
+      );
+
+    const pincode =
+      cleanString(
+        body.pincode
+      );
+
+    const latitude =
+      parseOptionalDecimal(
+        body.latitude
+      );
+
+    const longitude =
+      parseOptionalDecimal(
+        body.longitude
+      );
+
+    const radiusMeters =
+      parseRadius(
+        body.radiusMeters
+      );
+
+    const isHeadOffice =
+      body.isHeadOffice ===
+      true;
+
+    const isActive =
+      body.isActive !==
+      false;
 
     if (!userId) {
       return NextResponse.json(
@@ -316,12 +333,12 @@ export async function POST(request: Request) {
       );
     }
 
-    if (!staffCode) {
+    if (!code) {
       return NextResponse.json(
         {
           success: false,
           message:
-            "Staff code is required.",
+            "Office code is required.",
         },
         {
           status: 400,
@@ -334,58 +351,7 @@ export async function POST(request: Request) {
         {
           success: false,
           message:
-            "Staff name is required.",
-        },
-        {
-          status: 400,
-        }
-      );
-    }
-
-    if (
-      !/^[6-9]\d{9}$/.test(
-        phone
-      )
-    ) {
-      return NextResponse.json(
-        {
-          success: false,
-          message:
-            "Please enter a valid 10 digit staff mobile number.",
-        },
-        {
-          status: 400,
-        }
-      );
-    }
-
-    if (
-      loginEnabled &&
-      password.length < 6
-    ) {
-      return NextResponse.json(
-        {
-          success: false,
-          message:
-            "Staff password must contain at least 6 characters.",
-        },
-        {
-          status: 400,
-        }
-      );
-    }
-
-    if (
-      whatsapp &&
-      !/^[6-9]\d{9}$/.test(
-        whatsapp
-      )
-    ) {
-      return NextResponse.json(
-        {
-          success: false,
-          message:
-            "Please enter a valid WhatsApp number.",
+            "Office name is required.",
         },
         {
           status: 400,
@@ -411,82 +377,20 @@ export async function POST(request: Request) {
       );
     }
 
-    const owner =
-      await prisma.user.findUnique({
-        where: {
-          id: userId,
-        },
-        select: {
-          id: true,
-          isActive: true,
-        },
-      });
-
-    if (!owner) {
-      return NextResponse.json(
-        {
-          success: false,
-          message:
-            "Agent account was not found.",
-        },
-        {
-          status: 404,
-        }
-      );
-    }
-
-    if (!owner.isActive) {
-      return NextResponse.json(
-        {
-          success: false,
-          message:
-            "Agent account is inactive.",
-        },
-        {
-          status: 403,
-        }
-      );
-    }
-
     if (
-      officeId
-    ) {
-      const office =
-        await prisma.office.findFirst({
-          where: {
-            id: officeId,
-            userId,
-            isActive: true,
-          },
-          select: {
-            id: true,
-          },
-        });
-
-      if (!office) {
-        return NextResponse.json(
-          {
-            success: false,
-            message:
-              "Selected office is invalid.",
-          },
-          {
-            status: 400,
-          }
-        );
-      }
-    }
-
-    if (
-      (workMode === "OFFICE" ||
-        workMode === "HYBRID") &&
-      !officeId
+      latitude !== null &&
+      (
+        Number(latitude) <
+          -90 ||
+        Number(latitude) >
+          90
+      )
     ) {
       return NextResponse.json(
         {
           success: false,
           message:
-            "Please assign an office for Office or Hybrid staff.",
+            "Latitude must be between -90 and 90.",
         },
         {
           status: 400,
@@ -494,23 +398,53 @@ export async function POST(request: Request) {
       );
     }
 
-    const existingCode =
-      await prisma.staff.findFirst({
+    if (
+      longitude !== null &&
+      (
+        Number(longitude) <
+          -180 ||
+        Number(longitude) >
+          180
+      )
+    ) {
+      return NextResponse.json(
+        {
+          success: false,
+          message:
+            "Longitude must be between -180 and 180.",
+        },
+        {
+          status: 400,
+        }
+      );
+    }
+
+    const ownerCheck =
+      await ensureOwner(
+        userId
+      );
+
+    if (!ownerCheck.ok) {
+      return ownerCheck.response;
+    }
+
+    const duplicate =
+      await prisma.office.findFirst({
         where: {
           userId,
-          staffCode,
+          code,
         },
         select: {
           id: true,
         },
       });
 
-    if (existingCode) {
+    if (duplicate) {
       return NextResponse.json(
         {
           success: false,
           message:
-            "This staff code already exists.",
+            "This office code already exists.",
         },
         {
           status: 409,
@@ -518,256 +452,115 @@ export async function POST(request: Request) {
       );
     }
 
-    const existingStaffPhone =
-      await prisma.staff.findFirst({
-        where: {
-          phone,
-        },
-        select: {
-          id: true,
-        },
-      });
-
-    if (existingStaffPhone) {
-      return NextResponse.json(
-        {
-          success: false,
-          message:
-            "This mobile number is already used by another staff account.",
-        },
-        {
-          status: 409,
-        }
-      );
-    }
-
-    const existingUserPhone =
-      await prisma.user.findUnique({
-        where: {
-          phone,
-        },
-        select: {
-          id: true,
-        },
-      });
-
-    if (existingUserPhone) {
-      return NextResponse.json(
-        {
-          success: false,
-          message:
-            "This mobile number is already registered as an Agent/Admin login.",
-        },
-        {
-          status: 409,
-        }
-      );
-    }
-
-    if (email) {
-      const existingStaffEmail =
-        await prisma.staff.findFirst({
-          where: {
-            email,
-          },
-          select: {
-            id: true,
-          },
-        });
-
-      if (existingStaffEmail) {
-        return NextResponse.json(
-          {
-            success: false,
-            message:
-              "This email address is already used by another staff account.",
-          },
-          {
-            status: 409,
+    const office =
+      await prisma.$transaction(
+        async (tx) => {
+          if (
+            isHeadOffice
+          ) {
+            await tx.office.updateMany({
+              where: {
+                userId,
+                isHeadOffice:
+                  true,
+              },
+              data: {
+                isHeadOffice:
+                  false,
+              },
+            });
           }
-        );
-      }
 
-      const existingUserEmail =
-        await prisma.user.findUnique({
-          where: {
-            email,
-          },
-          select: {
-            id: true,
-          },
-        });
+          return tx.office.create({
+            data: {
+              userId,
 
-      if (existingUserEmail) {
-        return NextResponse.json(
-          {
-            success: false,
-            message:
-              "This email address is already registered as an Agent/Admin account.",
-          },
-          {
-            status: 409,
-          }
-        );
-      }
-    }
+              code,
+              name,
 
-    if (supervisorId) {
-      const supervisor =
-        await prisma.staff.findFirst({
-          where: {
-            id: supervisorId,
-            userId,
-            isActive: true,
-            staffRole:
-              "SUPERVISOR",
-          },
-          select: {
-            id: true,
-          },
-        });
+              address:
+                address ||
+                null,
 
-      if (!supervisor) {
-        return NextResponse.json(
-          {
-            success: false,
-            message:
-              "Selected supervisor is invalid.",
-          },
-          {
-            status: 400,
-          }
-        );
-      }
-    }
+              district:
+                district ||
+                null,
 
-    const passwordSource =
-      loginEnabled
-        ? password
-        : `disabled-${crypto.randomUUID()}`;
+              state:
+                state ||
+                null,
 
-    const passwordHash =
-      await bcrypt.hash(
-        passwordSource,
-        10
-      );
+              pincode:
+                pincode ||
+                null,
 
-    const staff =
-      await prisma.staff.create({
-        data: {
-          userId,
+              latitude,
+              longitude,
 
-          officeId,
+              radiusMeters,
 
-          staffCode,
-          name,
+              isHeadOffice,
+              isActive,
+            },
 
-          phone,
-
-          whatsapp:
-            whatsapp || null,
-
-          email:
-            email || null,
-
-          designation:
-            designation || null,
-
-          department:
-            department || null,
-
-          staffRole,
-
-          workMode:
-            workMode as any,
-
-          supervisorId,
-
-          address:
-            address || null,
-
-          district:
-            district || null,
-
-          state:
-            state || null,
-
-          pincode:
-            pincode || null,
-
-          joiningDate,
-
-          notes:
-            notes || null,
-
-          loginEnabled,
-
-          password:
-            passwordHash,
-
-          isActive: true,
-        },
-
-        select: {
-          id: true,
-          userId: true,
-          officeId: true,
-
-          staffCode: true,
-          name: true,
-
-          phone: true,
-          whatsapp: true,
-          email: true,
-
-          staffRole: true,
-          workMode: true,
-
-          designation: true,
-          department: true,
-
-          supervisorId: true,
-
-          address: true,
-          district: true,
-          state: true,
-          pincode: true,
-
-          joiningDate: true,
-          notes: true,
-
-          loginEnabled: true,
-          isActive: true,
-
-          createdAt: true,
-          updatedAt: true,
-
-          office: {
             select: {
               id: true,
+              userId: true,
+
               code: true,
               name: true,
-              isHeadOffice: true,
-            },
-          },
 
-          supervisor: {
-            select: {
-              id: true,
-              staffCode: true,
-              name: true,
-              staffRole: true,
+              address: true,
+              district: true,
+              state: true,
+              pincode: true,
+
+              latitude: true,
+              longitude: true,
+
+              radiusMeters: true,
+
+              isHeadOffice: true,
+              isActive: true,
+
+              createdAt: true,
+              updatedAt: true,
+
+              _count: {
+                select: {
+                  staff: true,
+                  attendance:
+                    true,
+                },
+              },
             },
-          },
-        },
-      });
+          });
+        }
+      );
 
     return NextResponse.json(
       {
         success: true,
         message:
-          "Staff created successfully.",
-        staff,
+          isHeadOffice
+            ? "Main Branch created successfully."
+            : "Branch Office created successfully.",
+
+        office: {
+          ...office,
+
+          latitude:
+            office.latitude ===
+            null
+              ? null
+              : office.latitude.toString(),
+
+          longitude:
+            office.longitude ===
+            null
+              ? null
+              : office.longitude.toString(),
+        },
       },
       {
         status: 201,
@@ -775,7 +568,7 @@ export async function POST(request: Request) {
     );
   } catch (error) {
     console.error(
-      "CREATE STAFF FULL ERROR:",
+      "CREATE OFFICE ERROR:",
       error
     );
 
@@ -783,7 +576,353 @@ export async function POST(request: Request) {
       {
         success: false,
         message:
-          getErrorMessage(error),
+          getErrorMessage(
+            error
+          ),
+      },
+      {
+        status: 500,
+      }
+    );
+  }
+}
+
+/* -------------------------------------------------------------------------- */
+/* UPDATE OFFICE                                                              */
+/* -------------------------------------------------------------------------- */
+
+export async function PUT(
+  request: Request
+) {
+  try {
+    const body =
+      await request.json();
+
+    const id =
+      cleanString(
+        body.id
+      );
+
+    const userId =
+      cleanString(
+        body.userId
+      );
+
+    const code =
+      cleanString(
+        body.code
+      ).toUpperCase();
+
+    const name =
+      cleanString(
+        body.name
+      );
+
+    const address =
+      cleanString(
+        body.address
+      );
+
+    const district =
+      cleanString(
+        body.district
+      );
+
+    const state =
+      cleanString(
+        body.state
+      );
+
+    const pincode =
+      cleanString(
+        body.pincode
+      );
+
+    const latitude =
+      parseOptionalDecimal(
+        body.latitude
+      );
+
+    const longitude =
+      parseOptionalDecimal(
+        body.longitude
+      );
+
+    const radiusMeters =
+      parseRadius(
+        body.radiusMeters
+      );
+
+    const isHeadOffice =
+      body.isHeadOffice ===
+      true;
+
+    const isActive =
+      body.isActive !==
+      false;
+
+    if (!id) {
+      return NextResponse.json(
+        {
+          success: false,
+          message:
+            "Office ID is required.",
+        },
+        {
+          status: 400,
+        }
+      );
+    }
+
+    if (!userId) {
+      return NextResponse.json(
+        {
+          success: false,
+          message:
+            "Agent/User ID is required.",
+        },
+        {
+          status: 400,
+        }
+      );
+    }
+
+    if (!code) {
+      return NextResponse.json(
+        {
+          success: false,
+          message:
+            "Office code is required.",
+        },
+        {
+          status: 400,
+        }
+      );
+    }
+
+    if (!name) {
+      return NextResponse.json(
+        {
+          success: false,
+          message:
+            "Office name is required.",
+        },
+        {
+          status: 400,
+        }
+      );
+    }
+
+    if (
+      pincode &&
+      !/^\d{6}$/.test(
+        pincode
+      )
+    ) {
+      return NextResponse.json(
+        {
+          success: false,
+          message:
+            "Please enter a valid 6 digit pincode.",
+        },
+        {
+          status: 400,
+        }
+      );
+    }
+
+    const ownerCheck =
+      await ensureOwner(
+        userId
+      );
+
+    if (!ownerCheck.ok) {
+      return ownerCheck.response;
+    }
+
+    const existing =
+      await prisma.office.findFirst({
+        where: {
+          id,
+          userId,
+        },
+        select: {
+          id: true,
+        },
+      });
+
+    if (!existing) {
+      return NextResponse.json(
+        {
+          success: false,
+          message:
+            "Office was not found.",
+        },
+        {
+          status: 404,
+        }
+      );
+    }
+
+    const duplicate =
+      await prisma.office.findFirst({
+        where: {
+          userId,
+          code,
+
+          NOT: {
+            id,
+          },
+        },
+        select: {
+          id: true,
+        },
+      });
+
+    if (duplicate) {
+      return NextResponse.json(
+        {
+          success: false,
+          message:
+            "This office code already exists.",
+        },
+        {
+          status: 409,
+        }
+      );
+    }
+
+    const office =
+      await prisma.$transaction(
+        async (tx) => {
+          if (
+            isHeadOffice
+          ) {
+            await tx.office.updateMany({
+              where: {
+                userId,
+                isHeadOffice:
+                  true,
+
+                NOT: {
+                  id,
+                },
+              },
+              data: {
+                isHeadOffice:
+                  false,
+              },
+            });
+          }
+
+          return tx.office.update({
+            where: {
+              id,
+            },
+
+            data: {
+              code,
+              name,
+
+              address:
+                address ||
+                null,
+
+              district:
+                district ||
+                null,
+
+              state:
+                state ||
+                null,
+
+              pincode:
+                pincode ||
+                null,
+
+              latitude,
+              longitude,
+
+              radiusMeters,
+
+              isHeadOffice,
+              isActive,
+            },
+
+            select: {
+              id: true,
+              userId: true,
+
+              code: true,
+              name: true,
+
+              address: true,
+              district: true,
+              state: true,
+              pincode: true,
+
+              latitude: true,
+              longitude: true,
+
+              radiusMeters: true,
+
+              isHeadOffice: true,
+              isActive: true,
+
+              createdAt: true,
+              updatedAt: true,
+
+              _count: {
+                select: {
+                  staff: true,
+                  attendance:
+                    true,
+                },
+              },
+            },
+          });
+        }
+      );
+
+    return NextResponse.json(
+      {
+        success: true,
+        message:
+          "Office updated successfully.",
+
+        office: {
+          ...office,
+
+          latitude:
+            office.latitude ===
+            null
+              ? null
+              : office.latitude.toString(),
+
+          longitude:
+            office.longitude ===
+            null
+              ? null
+              : office.longitude.toString(),
+        },
+      },
+      {
+        status: 200,
+      }
+    );
+  } catch (error) {
+    console.error(
+      "UPDATE OFFICE ERROR:",
+      error
+    );
+
+    return NextResponse.json(
+      {
+        success: false,
+        message:
+          getErrorMessage(
+            error
+          ),
       },
       {
         status: 500,
