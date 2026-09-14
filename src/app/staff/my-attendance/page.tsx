@@ -8,7 +8,9 @@ import {
   useRef,
   useState,
 } from "react";
-import { useRouter } from "next/navigation";
+import {
+  useRouter,
+} from "next/navigation";
 
 /* -------------------------------------------------------------------------- */
 /* TYPES                                                                      */
@@ -22,6 +24,15 @@ type StaffUser = {
   phone?: string;
   staffRole?: string;
   workMode?: string | null;
+  officeId?: string | null;
+
+  office?: {
+    id?: string;
+    code?: string;
+    name?: string;
+    radiusMeters?: number | null;
+    isHeadOffice?: boolean;
+  } | null;
 };
 
 type Attendance = {
@@ -51,6 +62,7 @@ type TeamPresence = {
   id: string;
   staffCode?: string | null;
   name: string;
+
   status:
     | "PRESENT"
     | "ON_LEAVE"
@@ -58,6 +70,7 @@ type TeamPresence = {
     | "ABSENT"
     | "WEEK_OFF"
     | "HOLIDAY";
+
   isMe?: boolean;
 };
 
@@ -68,193 +81,360 @@ type Setting = {
   weekOffDays?: string[] | null;
 
   gpsAttendanceEnabled?: boolean;
+
   requireGpsForCheckIn?: boolean;
   requireGpsForCheckOut?: boolean;
+
   requireCheckInPhoto?: boolean;
   requireCheckOutPhoto?: boolean;
+
   officeRadiusMeters?: number | null;
+  maxGpsAccuracyMeters?: number | null;
 };
 
 type ApiResponse = {
   success?: boolean;
   message?: string;
+
   staff?: StaffUser;
+
   attendance?: Attendance | null;
+
   history?: HistoryRow[];
+
   setting?: Setting | null;
+
   teamPresence?: TeamPresence[];
+
   holiday?: {
     name?: string;
   } | null;
+
   weekOff?: boolean;
 };
 
-type Tab = "SUMMARY" | "PUNCH";
+type Tab =
+  | "SUMMARY"
+  | "PUNCH";
+
+type WorkLocation =
+  | "OFFICE"
+  | "HOME"
+  | "FIELD";
 
 /* -------------------------------------------------------------------------- */
 /* HELPERS                                                                    */
 /* -------------------------------------------------------------------------- */
 
-function getLoggedInStaff(): StaffUser | null {
-  if (typeof window === "undefined") return null;
-
-  for (const key of ["staffUser", "agentUser", "user"]) {
-    const raw = localStorage.getItem(key);
-    if (!raw) continue;
-
-    try {
-      const parsed = JSON.parse(raw);
-
-      if (
-        parsed &&
-        (
-          parsed.staffCode ||
-          parsed.accountType === "STAFF" ||
-          parsed.role === "STAFF" ||
-          parsed.role === "SUPERVISOR"
-        )
-      ) {
-        return parsed;
-      }
-    } catch {
-      //
-    }
+function formatTime(
+  value?: string | null
+) {
+  if (!value) {
+    return "N.A.";
   }
 
-  return null;
+  const date =
+    new Date(value);
+
+  if (
+    Number.isNaN(
+      date.getTime()
+    )
+  ) {
+    return "N.A.";
+  }
+
+  return date.toLocaleTimeString(
+    "en-IN",
+    {
+      hour:
+        "2-digit",
+
+      minute:
+        "2-digit",
+
+      second:
+        "2-digit",
+
+      hour12:
+        false,
+    }
+  );
 }
 
-function formatTime(value?: string | null) {
-  if (!value) return "N.A.";
+function formatShortTime(
+  value?: string | null
+) {
+  if (!value) {
+    return "N.A.";
+  }
 
-  const date = new Date(value);
+  const date =
+    new Date(value);
 
-  if (Number.isNaN(date.getTime())) return "N.A.";
+  if (
+    Number.isNaN(
+      date.getTime()
+    )
+  ) {
+    return "N.A.";
+  }
 
-  return date.toLocaleTimeString("en-IN", {
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
-    hour12: false,
-  });
+  return date.toLocaleTimeString(
+    "en-IN",
+    {
+      hour:
+        "2-digit",
+
+      minute:
+        "2-digit",
+
+      hour12:
+        false,
+    }
+  );
 }
 
-function formatShortTime(value?: string | null) {
-  if (!value) return "N.A.";
-
-  const date = new Date(value);
-
-  if (Number.isNaN(date.getTime())) return "N.A.";
-
-  return date.toLocaleTimeString("en-IN", {
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: false,
-  });
-}
-
-function formatDate(value?: string | null) {
-  if (!value) return "—";
-
-  const date = new Date(value);
-
-  if (Number.isNaN(date.getTime())) return "—";
-
-  return date.toLocaleDateString("en-IN", {
-    day: "2-digit",
-    month: "short",
-    year: "numeric",
-  });
-}
-
-function dayParts(value?: string | null) {
+function dayParts(
+  value?: string | null
+) {
   if (!value) {
     return {
-      day: "--",
-      month: "---",
-      weekDay: "---",
+      day:
+        "--",
+
+      month:
+        "---",
+
+      weekDay:
+        "---",
     };
   }
 
-  const date = new Date(value);
+  const date =
+    new Date(value);
 
-  if (Number.isNaN(date.getTime())) {
+  if (
+    Number.isNaN(
+      date.getTime()
+    )
+  ) {
     return {
-      day: "--",
-      month: "---",
-      weekDay: "---",
+      day:
+        "--",
+
+      month:
+        "---",
+
+      weekDay:
+        "---",
     };
   }
 
   return {
-    day: String(date.getDate()).padStart(2, "0"),
-    month: date.toLocaleDateString("en-IN", {
-      month: "short",
-    }),
-    weekDay: date.toLocaleDateString("en-IN", {
-      weekday: "short",
-    }),
+    day:
+      String(
+        date.getDate()
+      ).padStart(
+        2,
+        "0"
+      ),
+
+    month:
+      date.toLocaleDateString(
+        "en-IN",
+        {
+          month:
+            "short",
+        }
+      ),
+
+    weekDay:
+      date.toLocaleDateString(
+        "en-IN",
+        {
+          weekday:
+            "short",
+        }
+      ),
   };
 }
 
-function formatMinutes(value?: number | null) {
-  const minutes = Number(value || 0);
+function formatMinutes(
+  value?: number | null
+) {
+  const minutes =
+    Number(
+      value || 0
+    );
 
-  if (!minutes) return "00:00";
+  if (!minutes) {
+    return "00:00";
+  }
 
-  const hours = Math.floor(minutes / 60);
-  const mins = minutes % 60;
+  const hours =
+    Math.floor(
+      minutes / 60
+    );
 
-  return `${String(hours).padStart(2, "0")}:${String(mins).padStart(2, "0")}`;
+  const mins =
+    minutes % 60;
+
+  return `${String(
+    hours
+  ).padStart(
+    2,
+    "0"
+  )}:${String(
+    mins
+  ).padStart(
+    2,
+    "0"
+  )}`;
 }
 
-function readable(value?: string | null) {
-  return String(value || "—")
-    .replaceAll("_", " ")
+function readable(
+  value?: string | null
+) {
+  const text =
+    String(
+      value || "—"
+    );
+
+  if (
+    text ===
+    "HOME"
+  ) {
+    return "Work From Home";
+  }
+
+  return text
+    .replaceAll(
+      "_",
+      " "
+    )
     .toLowerCase()
-    .replace(/\b\w/g, (letter) => letter.toUpperCase());
+    .replace(
+      /\b\w/g,
+      (letter) =>
+        letter.toUpperCase()
+    );
 }
 
-function normalizedStatus(value?: string | null) {
-  return String(value || "").toUpperCase();
+function normalizedStatus(
+  value?: string | null
+) {
+  return String(
+    value || ""
+  ).toUpperCase();
 }
 
-function monthName(date: Date) {
-  return date.toLocaleDateString("en-IN", {
-    month: "long",
-    year: "numeric",
-  });
+function monthName(
+  date: Date
+) {
+  return date.toLocaleDateString(
+    "en-IN",
+    {
+      month:
+        "long",
+
+      year:
+        "numeric",
+    }
+  );
 }
 
-function toDateInput(value?: string | null) {
-  if (!value) return "";
+function toDateInput(
+  value?: string | null
+) {
+  if (!value) {
+    return "";
+  }
 
-  const date = new Date(value);
+  const date =
+    new Date(value);
 
-  if (Number.isNaN(date.getTime())) return "";
+  if (
+    Number.isNaN(
+      date.getTime()
+    )
+  ) {
+    return "";
+  }
 
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, "0");
-  const day = String(date.getDate()).padStart(2, "0");
+  const year =
+    date.getFullYear();
+
+  const month =
+    String(
+      date.getMonth() +
+        1
+    ).padStart(
+      2,
+      "0"
+    );
+
+  const day =
+    String(
+      date.getDate()
+    ).padStart(
+      2,
+      "0"
+    );
 
   return `${year}-${month}-${day}`;
 }
 
-function presenceStyle(status: TeamPresence["status"]) {
-  switch (status) {
+function presenceStyle(
+  status:
+    TeamPresence["status"]
+) {
+  switch (
+    status
+  ) {
     case "PRESENT":
       return "bg-emerald-50 text-emerald-700 border-emerald-200";
+
     case "ON_LEAVE":
       return "bg-violet-50 text-violet-700 border-violet-200";
+
     case "ABSENT":
       return "bg-red-50 text-red-700 border-red-200";
+
     case "WEEK_OFF":
       return "bg-slate-100 text-slate-700 border-slate-200";
+
     case "HOLIDAY":
       return "bg-cyan-50 text-cyan-700 border-cyan-200";
+
     default:
       return "bg-amber-50 text-amber-700 border-amber-200";
   }
+}
+
+function workLocationFromMode(
+  mode?: string | null
+): WorkLocation {
+  const value =
+    String(
+      mode || "OFFICE"
+    ).toUpperCase();
+
+  if (
+    value ===
+    "WORK_FROM_HOME"
+  ) {
+    return "HOME";
+  }
+
+  if (
+    value ===
+    "FIELD"
+  ) {
+    return "FIELD";
+  }
+
+  return "OFFICE";
 }
 
 /* -------------------------------------------------------------------------- */
@@ -262,200 +442,436 @@ function presenceStyle(status: TeamPresence["status"]) {
 /* -------------------------------------------------------------------------- */
 
 export default function MyAttendancePage() {
-  const router = useRouter();
+  const router =
+    useRouter();
 
-  const [staff, setStaff] = useState<StaffUser | null>(null);
-  const [data, setData] = useState<ApiResponse | null>(null);
+  const [
+    staff,
+    setStaff,
+  ] =
+    useState<StaffUser | null>(
+      null
+    );
 
-  const [tab, setTab] = useState<Tab>("SUMMARY");
-  const [loading, setLoading] = useState(true);
-  const [actionLoading, setActionLoading] = useState(false);
+  const [
+    data,
+    setData,
+  ] =
+    useState<ApiResponse | null>(
+      null
+    );
 
-  const [message, setMessage] = useState("");
-  const [error, setError] = useState("");
+  const [
+    tab,
+    setTab,
+  ] =
+    useState<Tab>(
+      "SUMMARY"
+    );
 
-  const [workLocation, setWorkLocation] = useState("OFFICE");
+  const [
+    loading,
+    setLoading,
+  ] =
+    useState(
+      true
+    );
 
-  const [photoUrl, setPhotoUrl] = useState("");
-  const [photoPreview, setPhotoPreview] = useState("");
-  const [photoUploading, setPhotoUploading] = useState(false);
+  const [
+    actionLoading,
+    setActionLoading,
+  ] =
+    useState(
+      false
+    );
 
-  const [cameraOpen, setCameraOpen] = useState(false);
-  const [cameraStarting, setCameraStarting] = useState(false);
+  const [
+    message,
+    setMessage,
+  ] =
+    useState(
+      ""
+    );
 
-  const videoRef = useRef<HTMLVideoElement | null>(null);
-  const cameraStreamRef = useRef<MediaStream | null>(null);
+  const [
+    error,
+    setError,
+  ] =
+    useState(
+      ""
+    );
 
-  const [location, setLocation] = useState<{
-    latitude: number;
-    longitude: number;
-    accuracy: number;
-  } | null>(null);
+  const [
+    workLocation,
+    setWorkLocation,
+  ] =
+    useState<WorkLocation>(
+      "OFFICE"
+    );
 
-  const [locationLoading, setLocationLoading] = useState(false);
+  const [
+    photoUrl,
+    setPhotoUrl,
+  ] =
+    useState(
+      ""
+    );
+
+  const [
+    photoPreview,
+    setPhotoPreview,
+  ] =
+    useState(
+      ""
+    );
+
+  const [
+    photoUploading,
+    setPhotoUploading,
+  ] =
+    useState(
+      false
+    );
+
+  const [
+    cameraOpen,
+    setCameraOpen,
+  ] =
+    useState(
+      false
+    );
+
+  const [
+    cameraStarting,
+    setCameraStarting,
+  ] =
+    useState(
+      false
+    );
+
+  const videoRef =
+    useRef<HTMLVideoElement | null>(
+      null
+    );
+
+  const cameraStreamRef =
+    useRef<MediaStream | null>(
+      null
+    );
+
+  const [
+    location,
+    setLocation,
+  ] =
+    useState<{
+      latitude:
+        number;
+
+      longitude:
+        number;
+
+      accuracy:
+        number;
+    } | null>(
+      null
+    );
+
+  const [
+    locationLoading,
+    setLocationLoading,
+  ] =
+    useState(
+      false
+    );
 
   /* ------------------------------------------------------------------------ */
   /* LOAD                                                                     */
   /* ------------------------------------------------------------------------ */
 
-  const loadData = useCallback(
-    async (currentStaff: StaffUser) => {
-      const ownerUserId = String(currentStaff.userId || "").trim();
-      const currentStaffId = String(currentStaff.id || "").trim();
+  const loadData =
+    useCallback(
+      async () => {
+        const response =
+          await fetch(
+            "/api/staff/my-attendance",
+            {
+              cache:
+                "no-store",
+            }
+          );
 
-      if (!ownerUserId || !currentStaffId) {
-        throw new Error("Staff login information is incomplete.");
-      }
+        let json:
+          ApiResponse =
+          {};
 
-      const response = await fetch(
-        `/api/staff/my-attendance?userId=${encodeURIComponent(
-          ownerUserId
-        )}&staffId=${encodeURIComponent(currentStaffId)}`,
-        {
-          cache: "no-store",
+        try {
+          json =
+            await response.json();
+        } catch {
+          json = {};
         }
-      );
 
-      let json: ApiResponse = {};
+        if (
+          response.status ===
+          401
+        ) {
+          router.replace(
+            "/login"
+          );
 
-      try {
-        json = await response.json();
-      } catch {
-        json = {};
-      }
-
-      if (!response.ok || json.success === false) {
-        throw new Error(json.message || "Unable to load attendance.");
-      }
-
-      setData(json);
-
-      if (json.staff?.workMode) {
-        const mode = String(json.staff.workMode).toUpperCase();
-
-        if (mode.includes("HOME")) {
-          setWorkLocation("WORK_FROM_HOME");
-        } else if (mode.includes("FIELD")) {
-          setWorkLocation("FIELD");
+          return;
         }
-      }
-    },
-    []
-  );
+
+        if (
+          !response.ok ||
+          json.success ===
+            false
+        ) {
+          throw new Error(
+            json.message ||
+              "Unable to load attendance."
+          );
+        }
+
+        setData(
+          json
+        );
+
+        if (
+          json.staff
+        ) {
+          setStaff(
+            json.staff
+          );
+
+          setWorkLocation(
+            workLocationFromMode(
+              json.staff
+                .workMode
+            )
+          );
+        }
+      },
+      [
+        router,
+      ]
+    );
 
   useEffect(() => {
-    const currentStaff = getLoggedInStaff();
-
-    if (!currentStaff?.id || !currentStaff?.userId) {
-      router.replace("/login");
-      return;
-    }
-
-    setStaff(currentStaff);
-
-    void loadData(currentStaff)
-      .catch((loadError) => {
-        setError(
-          loadError instanceof Error
-            ? loadError.message
-            : "Unable to load attendance."
-        );
-      })
-      .finally(() => setLoading(false));
-  }, [router, loadData]);
+    void loadData()
+      .catch(
+        (
+          loadError
+        ) => {
+          setError(
+            loadError instanceof Error
+              ? loadError.message
+              : "Unable to load attendance."
+          );
+        }
+      )
+      .finally(
+        () =>
+          setLoading(
+            false
+          )
+      );
+  }, [
+    loadData,
+  ]);
 
   /* ------------------------------------------------------------------------ */
   /* MONTH SUMMARY                                                            */
   /* ------------------------------------------------------------------------ */
 
-  const monthSummary = useMemo(() => {
-    const now = new Date();
+  const monthSummary =
+    useMemo(() => {
+      const now =
+        new Date();
 
-    const rows =
-      Array.isArray(data?.history)
-        ? data?.history || []
-        : [];
-
-    const monthRows = rows.filter((row) => {
-      if (!row.date) return false;
-
-      const date = new Date(row.date);
-
-      return (
-        !Number.isNaN(date.getTime()) &&
-        date.getMonth() === now.getMonth() &&
-        date.getFullYear() === now.getFullYear()
-      );
-    });
-
-    const presentDays = monthRows.filter((row) => {
-      const status = normalizedStatus(row.status);
-
-      return ["PRESENT", "LATE", "HALF_DAY"].includes(status);
-    }).length;
-
-    const absentDays = monthRows.filter(
-      (row) => normalizedStatus(row.status) === "ABSENT"
-    ).length;
-
-    const workingRows = monthRows.filter(
-      (row) => Number(row.workingMinutes || 0) > 0
-    );
-
-    const averageMinutes = workingRows.length
-      ? Math.round(
-          workingRows.reduce(
-            (total, row) => total + Number(row.workingMinutes || 0),
-            0
-          ) / workingRows.length
+      const rows =
+        Array.isArray(
+          data?.history
         )
-      : 0;
+          ? data?.history ||
+            []
+          : [];
 
-    const leaveDays =
-      data?.teamPresence?.find((member) => member.isMe)?.status === "ON_LEAVE"
-        ? 1
-        : 0;
+      const monthRows =
+        rows.filter(
+          (row) => {
+            if (
+              !row.date
+            ) {
+              return false;
+            }
 
-    return {
-      monthLabel: monthName(now),
-      presentDays,
-      absentDays,
-      leaveDays,
-      averageMinutes,
-    };
-  }, [data]);
+            const date =
+              new Date(
+                row.date
+              );
+
+            return (
+              !Number.isNaN(
+                date.getTime()
+              ) &&
+              date.getMonth() ===
+                now.getMonth() &&
+              date.getFullYear() ===
+                now.getFullYear()
+            );
+          }
+        );
+
+      const presentDays =
+        monthRows.filter(
+          (row) => {
+            const status =
+              normalizedStatus(
+                row.status
+              );
+
+            return [
+              "PRESENT",
+              "LATE",
+              "HALF_DAY",
+            ].includes(
+              status
+            );
+          }
+        ).length;
+
+      const absentDays =
+        monthRows.filter(
+          (row) =>
+            normalizedStatus(
+              row.status
+            ) ===
+            "ABSENT"
+        ).length;
+
+      const workingRows =
+        monthRows.filter(
+          (row) =>
+            Number(
+              row.workingMinutes ||
+                0
+            ) >
+            0
+        );
+
+      const averageMinutes =
+        workingRows.length
+          ? Math.round(
+              workingRows.reduce(
+                (
+                  total,
+                  row
+                ) =>
+                  total +
+                  Number(
+                    row.workingMinutes ||
+                      0
+                  ),
+                0
+              ) /
+                workingRows.length
+            )
+          : 0;
+
+      const leaveDays =
+        data?.teamPresence?.find(
+          (member) =>
+            member.isMe
+        )?.status ===
+        "ON_LEAVE"
+          ? 1
+          : 0;
+
+      return {
+        monthLabel:
+          monthName(
+            now
+          ),
+
+        presentDays,
+        absentDays,
+        leaveDays,
+        averageMinutes,
+      };
+    }, [
+      data,
+    ]);
 
   /* ------------------------------------------------------------------------ */
   /* LOCATION                                                                 */
   /* ------------------------------------------------------------------------ */
 
   function captureLocation() {
-    if (!navigator.geolocation) {
-      setError("GPS is not supported by this device/browser.");
+    if (
+      !navigator.geolocation
+    ) {
+      setError(
+        "GPS is not supported by this device/browser."
+      );
+
       return;
     }
 
-    setLocationLoading(true);
-    setError("");
+    setLocationLoading(
+      true
+    );
+
+    setError(
+      ""
+    );
+
+    setLocation(
+      null
+    );
 
     navigator.geolocation.getCurrentPosition(
-      (position) => {
+      (
+        position
+      ) => {
         setLocation({
-          latitude: position.coords.latitude,
-          longitude: position.coords.longitude,
-          accuracy: position.coords.accuracy,
+          latitude:
+            position.coords.latitude,
+
+          longitude:
+            position.coords.longitude,
+
+          accuracy:
+            position.coords.accuracy,
         });
 
-        setLocationLoading(false);
+        setLocationLoading(
+          false
+        );
       },
-      (locationError) => {
-        setError(locationError.message || "Unable to read GPS location.");
-        setLocationLoading(false);
+
+      (
+        locationError
+      ) => {
+        setError(
+          locationError.message ||
+            "Unable to read GPS location."
+        );
+
+        setLocationLoading(
+          false
+        );
       },
+
       {
-        enableHighAccuracy: true,
-        timeout: 15000,
-        maximumAge: 0,
+        enableHighAccuracy:
+          true,
+
+        timeout:
+          20000,
+
+        maximumAge:
+          0,
       }
     );
   }
@@ -465,56 +881,101 @@ export default function MyAttendancePage() {
   /* ------------------------------------------------------------------------ */
 
   function stopCamera() {
-    const stream = cameraStreamRef.current;
+    const stream =
+      cameraStreamRef.current;
 
-    if (stream) {
-      for (const track of stream.getTracks()) {
+    if (
+      stream
+    ) {
+      for (
+        const track
+        of stream.getTracks()
+      ) {
         track.stop();
       }
     }
 
-    cameraStreamRef.current = null;
+    cameraStreamRef.current =
+      null;
 
-    if (videoRef.current) {
-      videoRef.current.srcObject = null;
+    if (
+      videoRef.current
+    ) {
+      videoRef.current.srcObject =
+        null;
     }
 
-    setCameraOpen(false);
-    setCameraStarting(false);
+    setCameraOpen(
+      false
+    );
+
+    setCameraStarting(
+      false
+    );
   }
 
   async function openCamera() {
-    setError("");
-    setCameraStarting(true);
-    setCameraOpen(true);
+    setError(
+      ""
+    );
+
+    setCameraStarting(
+      true
+    );
+
+    setCameraOpen(
+      true
+    );
 
     try {
-      if (!navigator.mediaDevices?.getUserMedia) {
-        throw new Error("Camera access is not supported by this browser.");
+      if (
+        !navigator.mediaDevices
+          ?.getUserMedia
+      ) {
+        throw new Error(
+          "Camera access is not supported by this browser."
+        );
       }
 
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: {
-          facingMode: "user",
-          width: {
-            ideal: 720,
-          },
-          height: {
-            ideal: 720,
-          },
-        },
-        audio: false,
-      });
+      const stream =
+        await navigator.mediaDevices.getUserMedia({
+          video: {
+            facingMode:
+              "user",
 
-      cameraStreamRef.current = stream;
+            width: {
+              ideal:
+                720,
+            },
 
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream;
+            height: {
+              ideal:
+                720,
+            },
+          },
+
+          audio:
+            false,
+        });
+
+      cameraStreamRef.current =
+        stream;
+
+      if (
+        videoRef.current
+      ) {
+        videoRef.current.srcObject =
+          stream;
+
         await videoRef.current.play();
       }
 
-      setCameraStarting(false);
-    } catch (cameraError) {
+      setCameraStarting(
+        false
+      );
+    } catch (
+      cameraError
+    ) {
       stopCamera();
 
       setError(
@@ -526,33 +987,91 @@ export default function MyAttendancePage() {
   }
 
   async function captureSelfie() {
-    const video = videoRef.current;
+    const video =
+      videoRef.current;
 
-    if (!video || video.videoWidth <= 0 || video.videoHeight <= 0) {
-      setError("Camera is not ready. Please wait and try again.");
+    if (
+      !video ||
+      video.videoWidth <=
+        0 ||
+      video.videoHeight <=
+        0
+    ) {
+      setError(
+        "Camera is not ready. Please wait and try again."
+      );
+
       return;
     }
 
-    setPhotoUploading(true);
-    setError("");
+    setPhotoUploading(
+      true
+    );
+
+    setError(
+      ""
+    );
 
     try {
-      const size = Math.min(video.videoWidth, video.videoHeight);
-      const sourceX = Math.max(0, (video.videoWidth - size) / 2);
-      const sourceY = Math.max(0, (video.videoHeight - size) / 2);
+      const size =
+        Math.min(
+          video.videoWidth,
+          video.videoHeight
+        );
 
-      const canvas = document.createElement("canvas");
-      canvas.width = 720;
-      canvas.height = 720;
+      const sourceX =
+        Math.max(
+          0,
+          (
+            video.videoWidth -
+            size
+          ) /
+            2
+        );
 
-      const context = canvas.getContext("2d");
+      const sourceY =
+        Math.max(
+          0,
+          (
+            video.videoHeight -
+            size
+          ) /
+            2
+        );
 
-      if (!context) {
-        throw new Error("Unable to capture selfie.");
+      const canvas =
+        document.createElement(
+          "canvas"
+        );
+
+      canvas.width =
+        720;
+
+      canvas.height =
+        720;
+
+      const context =
+        canvas.getContext(
+          "2d"
+        );
+
+      if (
+        !context
+      ) {
+        throw new Error(
+          "Unable to capture selfie."
+        );
       }
 
-      context.translate(canvas.width, 0);
-      context.scale(-1, 1);
+      context.translate(
+        canvas.width,
+        0
+      );
+
+      context.scale(
+        -1,
+        1
+      );
 
       context.drawImage(
         video,
@@ -566,63 +1085,126 @@ export default function MyAttendancePage() {
         canvas.height
       );
 
-      const blob = await new Promise<Blob | null>((resolve) => {
-        canvas.toBlob(resolve, "image/jpeg", 0.88);
-      });
+      const blob =
+        await new Promise<Blob | null>(
+          (
+            resolve
+          ) => {
+            canvas.toBlob(
+              resolve,
+              "image/jpeg",
+              0.88
+            );
+          }
+        );
 
-      if (!blob) {
-        throw new Error("Unable to create selfie image.");
+      if (
+        !blob
+      ) {
+        throw new Error(
+          "Unable to create selfie image."
+        );
       }
 
-      setPhotoPreview(URL.createObjectURL(blob));
+      const preview =
+        URL.createObjectURL(
+          blob
+        );
 
-      const file = new File(
-        [blob],
-        `attendance-selfie-${Date.now()}.jpg`,
-        {
-          type: "image/jpeg",
-        }
+      setPhotoPreview(
+        preview
       );
 
-      const form = new FormData();
+      const file =
+        new File(
+          [
+            blob,
+          ],
 
-      form.append("file", file);
-      form.append("folder", "other");
+          `attendance-selfie-${Date.now()}.jpg`,
 
-      const response = await fetch("/api/upload", {
-        method: "POST",
-        body: form,
-      });
+          {
+            type:
+              "image/jpeg",
+          }
+        );
 
-      let json: any = {};
+      const form =
+        new FormData();
+
+      form.append(
+        "file",
+        file
+      );
+
+      form.append(
+        "folder",
+        "other"
+      );
+
+      const response =
+        await fetch(
+          "/api/upload",
+          {
+            method:
+              "POST",
+
+            body:
+              form,
+          }
+        );
+
+      let json:
+        any =
+        {};
 
       try {
-        json = await response.json();
+        json =
+          await response.json();
       } catch {
         json = {};
       }
 
-      if (!response.ok || json.success === false) {
-        throw new Error(json.message || "Unable to upload selfie.");
+      if (
+        !response.ok ||
+        json.success ===
+          false
+      ) {
+        throw new Error(
+          json.message ||
+            "Unable to upload selfie."
+        );
       }
 
-      const url = String(
-        json.url ||
-          json.fileUrl ||
-          json.location ||
-          json.data?.url ||
-          json.data?.fileUrl ||
-          ""
-      ).trim();
+      const url =
+        String(
+          json.url ||
+            json.fileUrl ||
+            json.location ||
+            json.data?.url ||
+            json.data?.fileUrl ||
+            ""
+        ).trim();
 
-      if (!url) {
-        throw new Error("Selfie uploaded but no file URL was returned.");
+      if (
+        !url
+      ) {
+        throw new Error(
+          "Selfie uploaded but no file URL was returned."
+        );
       }
 
-      setPhotoUrl(url);
+      setPhotoUrl(
+        url
+      );
+
       stopCamera();
-    } catch (captureError) {
-      setPhotoUrl("");
+    } catch (
+      captureError
+    ) {
+      setPhotoUrl(
+        ""
+      );
 
       setError(
         captureError instanceof Error
@@ -630,16 +1212,24 @@ export default function MyAttendancePage() {
           : "Unable to capture selfie."
       );
     } finally {
-      setPhotoUploading(false);
+      setPhotoUploading(
+        false
+      );
     }
   }
 
   useEffect(() => {
     return () => {
-      const stream = cameraStreamRef.current;
+      const stream =
+        cameraStreamRef.current;
 
-      if (stream) {
-        for (const track of stream.getTracks()) {
+      if (
+        stream
+      ) {
+        for (
+          const track
+          of stream.getTracks()
+        ) {
           track.stop();
         }
       }
@@ -650,104 +1240,257 @@ export default function MyAttendancePage() {
   /* PUNCH                                                                    */
   /* ------------------------------------------------------------------------ */
 
-  async function punch(action: "PUNCH_IN" | "PUNCH_OUT") {
-    if (!staff?.id || !staff.userId) return;
+  async function punch(
+    action:
+      | "PUNCH_IN"
+      | "PUNCH_OUT"
+  ) {
+    if (
+      !staff
+    ) {
+      return;
+    }
 
-    const setting = data?.setting;
+    const setting =
+      data?.setting;
+
+    const officeMode =
+      workLocation ===
+      "OFFICE";
 
     const photoRequired =
-      action === "PUNCH_IN"
-        ? Boolean(setting?.requireCheckInPhoto)
-        : Boolean(setting?.requireCheckOutPhoto);
+      action ===
+      "PUNCH_IN"
+        ? Boolean(
+            setting?.requireCheckInPhoto
+          )
+        : Boolean(
+            setting?.requireCheckOutPhoto
+          );
 
+    /*
+     * OFFICE is ALWAYS GPS protected.
+     */
     const gpsRequired =
-      Boolean(setting?.gpsAttendanceEnabled) &&
-      (
-        action === "PUNCH_IN"
-          ? Boolean(setting?.requireGpsForCheckIn)
-          : Boolean(setting?.requireGpsForCheckOut)
+      officeMode ||
+      Boolean(
+        setting?.gpsAttendanceEnabled
       );
 
-    if (photoRequired && !photoUrl) {
-      setError("Please capture your selfie first.");
+    if (
+      photoRequired &&
+      !photoUrl
+    ) {
+      setError(
+        "Please capture your selfie first."
+      );
+
       return;
     }
 
-    if (gpsRequired && !location) {
-      setError("Please capture your GPS location first.");
+    if (
+      gpsRequired &&
+      !location
+    ) {
+      setError(
+        "Please capture your GPS location first."
+      );
+
       return;
     }
 
-    setActionLoading(true);
-    setMessage("");
-    setError("");
+    const maxGpsAccuracy =
+      Number(
+        setting?.maxGpsAccuracyMeters ??
+        100
+      );
+
+    if (
+      officeMode &&
+      location &&
+      location.accuracy >
+        maxGpsAccuracy
+    ) {
+      setError(
+        `GPS accuracy is currently about ${Math.round(
+          location.accuracy
+        )} metres. It must be ${maxGpsAccuracy} metres or better. Please capture GPS again.`
+      );
+
+      return;
+    }
+
+    setActionLoading(
+      true
+    );
+
+    setMessage(
+      ""
+    );
+
+    setError(
+      ""
+    );
 
     try {
-      const response = await fetch("/api/staff/my-attendance", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          userId: staff.userId,
-          staffId: staff.id,
-          action,
-          workLocation,
-          photoUrl: photoUrl || null,
-          latitude: location?.latitude ?? null,
-          longitude: location?.longitude ?? null,
-          accuracy: location?.accuracy ?? null,
-        }),
-      });
+      const response =
+        await fetch(
+          "/api/staff/my-attendance",
+          {
+            method:
+              "POST",
 
-      let json: any = {};
+            headers: {
+              "Content-Type":
+                "application/json",
+            },
+
+            body:
+              JSON.stringify({
+                action,
+                workLocation,
+
+                photoUrl:
+                  photoUrl ||
+                  null,
+
+                latitude:
+                  location?.latitude ??
+                  null,
+
+                longitude:
+                  location?.longitude ??
+                  null,
+
+                accuracy:
+                  location?.accuracy ??
+                  null,
+              }),
+          }
+        );
+
+      let json:
+        any =
+        {};
 
       try {
-        json = await response.json();
+        json =
+          await response.json();
       } catch {
         json = {};
       }
 
-      if (!response.ok || json.success === false) {
-        throw new Error(json.message || "Unable to save attendance.");
+      if (
+        response.status ===
+        401
+      ) {
+        router.replace(
+          "/login"
+        );
+
+        return;
       }
 
-      setMessage(json.message || "Attendance updated.");
-      setPhotoUrl("");
-      setPhotoPreview("");
-      setLocation(null);
+      if (
+        !response.ok ||
+        json.success ===
+          false
+      ) {
+        throw new Error(
+          json.message ||
+            "Unable to save attendance."
+        );
+      }
 
-      await loadData(staff);
-      setTab("SUMMARY");
-    } catch (punchError) {
+      setMessage(
+        json.message ||
+          "Attendance updated."
+      );
+
+      setPhotoUrl(
+        ""
+      );
+
+      setPhotoPreview(
+        ""
+      );
+
+      setLocation(
+        null
+      );
+
+      await loadData();
+
+      setTab(
+        "SUMMARY"
+      );
+    } catch (
+      punchError
+    ) {
       setError(
         punchError instanceof Error
           ? punchError.message
           : "Unable to save attendance."
       );
     } finally {
-      setActionLoading(false);
+      setActionLoading(
+        false
+      );
     }
   }
 
-  const attendance = data?.attendance || null;
-  const hasPunchedIn = Boolean(attendance?.checkIn);
-  const hasPunchedOut = Boolean(attendance?.checkOut);
+  /* ------------------------------------------------------------------------ */
+  /* DERIVED                                                                  */
+  /* ------------------------------------------------------------------------ */
 
-  const teamPresence = useMemo(
-    () =>
-      Array.isArray(data?.teamPresence)
-        ? data?.teamPresence || []
-        : [],
-    [data]
-  );
+  const attendance =
+    data?.attendance ||
+    null;
 
-  if (loading) {
+  const hasPunchedIn =
+    Boolean(
+      attendance?.checkIn
+    );
+
+  const hasPunchedOut =
+    Boolean(
+      attendance?.checkOut
+    );
+
+  const staffMode =
+    String(
+      staff?.workMode ||
+        "OFFICE"
+    ).toUpperCase();
+
+  const locationLocked =
+    staffMode !==
+    "HYBRID";
+
+  const teamPresence =
+    useMemo(
+      () =>
+        Array.isArray(
+          data?.teamPresence
+        )
+          ? data?.teamPresence ||
+            []
+          : [],
+      [
+        data,
+      ]
+    );
+
+  if (
+    loading
+  ) {
     return (
       <main className="flex min-h-screen items-center justify-center bg-slate-50">
+
         <p className="font-bold text-slate-500">
           Loading my attendance...
         </p>
+
       </main>
     );
   }
@@ -758,6 +1501,7 @@ export default function MyAttendancePage() {
       {/* HEADER */}
 
       <header className="border-b border-slate-200 bg-white">
+
         <div className="mx-auto flex max-w-6xl items-center justify-between gap-3 px-4 py-4">
 
           <div className="flex items-center gap-3">
@@ -770,6 +1514,7 @@ export default function MyAttendancePage() {
             </Link>
 
             <div>
+
               <p className="text-[11px] font-black uppercase tracking-[0.18em] text-blue-700">
                 Staff Portal
               </p>
@@ -779,8 +1524,9 @@ export default function MyAttendancePage() {
               </h1>
 
               <p className="mt-0.5 text-sm font-semibold text-slate-500">
-                Summary, punch and attendance requests.
+                Secure GPS, selfie and IP verified attendance.
               </p>
+
             </div>
 
           </div>
@@ -790,6 +1536,7 @@ export default function MyAttendancePage() {
           </span>
 
         </div>
+
       </header>
 
       <section className="mx-auto max-w-6xl px-4 py-5">
@@ -814,9 +1561,14 @@ export default function MyAttendancePage() {
 
             <button
               type="button"
-              onClick={() => setTab("SUMMARY")}
+              onClick={() =>
+                setTab(
+                  "SUMMARY"
+                )
+              }
               className={`rounded-xl px-4 py-3 text-sm font-black ${
-                tab === "SUMMARY"
+                tab ===
+                "SUMMARY"
                   ? "bg-blue-700 text-white"
                   : "text-slate-600"
               }`}
@@ -826,9 +1578,14 @@ export default function MyAttendancePage() {
 
             <button
               type="button"
-              onClick={() => setTab("PUNCH")}
+              onClick={() =>
+                setTab(
+                  "PUNCH"
+                )
+              }
               className={`rounded-xl px-4 py-3 text-sm font-black ${
-                tab === "PUNCH"
+                tab ===
+                "PUNCH"
                   ? "bg-blue-700 text-white"
                   : "text-slate-600"
               }`}
@@ -840,9 +1597,9 @@ export default function MyAttendancePage() {
 
         </div>
 
-        {tab === "SUMMARY" ? (
+        {tab ===
+        "SUMMARY" ? (
           <>
-            {/* SUMMARY */}
 
             <section className="mt-4 rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
 
@@ -855,37 +1612,38 @@ export default function MyAttendancePage() {
                 <div className="mt-5 grid grid-cols-2 gap-4 md:grid-cols-4">
 
                   <SummaryMetric
-                    value={String(monthSummary.leaveDays)}
+                    value={String(
+                      monthSummary.leaveDays
+                    )}
                     label="Leave Days"
                     valueClass="text-violet-700"
                   />
 
                   <SummaryMetric
-                    value={String(monthSummary.presentDays)}
+                    value={String(
+                      monthSummary.presentDays
+                    )}
                     label="Present Days"
                     valueClass="text-emerald-700"
                   />
 
                   <SummaryMetric
-                    value={String(monthSummary.absentDays)}
+                    value={String(
+                      monthSummary.absentDays
+                    )}
                     label="Absent Days"
                     valueClass="text-red-700"
                   />
 
                   <SummaryMetric
-                    value={formatMinutes(monthSummary.averageMinutes)}
+                    value={formatMinutes(
+                      monthSummary.averageMinutes
+                    )}
                     label="Avg. Work Duration"
                     valueClass="text-blue-700"
                   />
 
                 </div>
-
-                <a
-                  href="#history"
-                  className="mt-6 inline-flex rounded-xl bg-blue-700 px-6 py-3 text-sm font-black text-white"
-                >
-                  Attendance View
-                </a>
 
               </div>
 
@@ -894,39 +1652,59 @@ export default function MyAttendancePage() {
                 <InfoPanel
                   title="Shift"
                   lines={[
-                    `${data?.setting?.officeStartTime || "09:30"} - ${
-                      data?.setting?.officeEndTime || "18:00"
+                    `${
+                      data?.setting
+                        ?.officeStartTime ||
+                      "09:30"
+                    } - ${
+                      data?.setting
+                        ?.officeEndTime ||
+                      "18:00"
                     }`,
-                    "Office",
                   ]}
                 />
 
                 <InfoPanel
-                  title="Weekly Off"
+                  title="Work Mode"
                   lines={[
-                    data?.setting?.weekOffDays?.length
-                      ? data.setting.weekOffDays.map(readable).join(", ")
-                      : "Sunday",
+                    readable(
+                      staff?.workMode
+                    ),
+
+                    staff?.office?.name
+                      ? `Office: ${staff.office.name}${
+                          staff.office.code
+                            ? ` (${staff.office.code})`
+                            : ""
+                        }`
+                      : "Office: Not assigned",
                   ]}
                 />
 
                 <InfoPanel
-                  title="Attendance Policy"
+                  title="Attendance Security"
                   lines={[
-                    data?.setting?.gpsAttendanceEnabled
-                      ? "GPS Verification"
-                      : "Web Attendance",
-                    data?.setting?.requireCheckInPhoto
-                      ? "Selfie required at check-in"
-                      : "Selfie optional",
+                    workLocation ===
+                    "OFFICE"
+                      ? `GPS compulsory · ${
+                          data?.setting
+                            ?.officeRadiusMeters ||
+                          100
+                        }m assigned office radius`
+                      : "GPS location recorded",
+
+                    data?.setting
+                      ?.requireCheckInPhoto
+                      ? "Selfie required"
+                      : "Selfie according to policy",
+
+                    "IP captured automatically",
                   ]}
                 />
 
               </div>
 
             </section>
-
-            {/* QUICK SELF SERVICE */}
 
             <div className="mt-4 grid gap-3 sm:grid-cols-2">
 
@@ -945,8 +1723,6 @@ export default function MyAttendancePage() {
               </Link>
 
             </div>
-
-            {/* HISTORY */}
 
             <section
               id="history"
@@ -972,97 +1748,121 @@ export default function MyAttendancePage() {
               ) : (
                 <div className="divide-y divide-slate-100">
 
-                  {data.history.map((row) => {
-                    const dateInfo = dayParts(row.date);
-                    const status = normalizedStatus(row.status);
+                  {data.history.map(
+                    (
+                      row
+                    ) => {
+                      const dateInfo =
+                        dayParts(
+                          row.date
+                        );
 
-                    return (
-                      <div
-                        key={row.id}
-                        className="grid gap-3 px-4 py-4 md:grid-cols-[90px_1fr_auto] md:items-center"
-                      >
+                      const status =
+                        normalizedStatus(
+                          row.status
+                        );
 
-                        <div className="flex gap-3 md:block">
+                      return (
+                        <div
+                          key={
+                            row.id
+                          }
+                          className="grid gap-3 px-4 py-4 md:grid-cols-[90px_1fr_auto] md:items-center"
+                        >
 
-                          <p className="text-2xl font-black text-slate-900">
-                            {dateInfo.day}
-                          </p>
+                          <div className="flex gap-3 md:block">
+
+                            <p className="text-2xl font-black text-slate-900">
+                              {dateInfo.day}
+                            </p>
+
+                            <div>
+
+                              <p className="text-sm font-black text-slate-600">
+                                {dateInfo.month}
+                              </p>
+
+                              <p className="text-xs font-bold text-slate-400">
+                                {dateInfo.weekDay}
+                              </p>
+
+                            </div>
+
+                          </div>
 
                           <div>
-                            <p className="text-sm font-black text-slate-600">
-                              {dateInfo.month}
+
+                            <div className="flex flex-wrap items-center gap-2">
+
+                              <p
+                                className={`font-black ${
+                                  status ===
+                                  "ABSENT"
+                                    ? "text-red-700"
+                                    : status ===
+                                        "WEEK_OFF"
+                                      ? "text-violet-700"
+                                      : "text-slate-950"
+                                }`}
+                              >
+                                {readable(
+                                  row.status
+                                )}
+                              </p>
+
+                              {row.adminEdited && (
+                                <span className="text-xs font-black text-emerald-700">
+                                  Attendance Request
+                                </span>
+                              )}
+
+                            </div>
+
+                            <p className="mt-1 text-sm font-bold text-slate-700">
+                              {formatTime(
+                                row.checkIn
+                              )}
+                              {" → "}
+                              {formatTime(
+                                row.checkOut
+                              )}
                             </p>
 
-                            <p className="text-xs font-bold text-slate-400">
-                              {dateInfo.weekDay}
+                            <p className="mt-1 text-xs font-semibold text-slate-500">
+                              {readable(
+                                row.workLocation
+                              )}
                             </p>
+
                           </div>
 
-                        </div>
-
-                        <div>
-
-                          <div className="flex flex-wrap items-center gap-2">
-
-                            <p
-                              className={`font-black ${
-                                status === "ABSENT"
-                                  ? "text-red-700"
-                                  : status === "WEEK_OFF"
-                                    ? "text-violet-700"
-                                    : "text-slate-950"
-                              }`}
-                            >
-                              {readable(row.status)}
-                            </p>
-
-                            {row.adminEdited && (
-                              <span className="text-xs font-black text-emerald-700">
-                                Attendance Request
-                              </span>
-                            )}
-
-                          </div>
-
-                          <p className="mt-1 text-sm font-bold text-slate-700">
-                            {formatTime(row.checkIn)}
-                            {"  →  "}
-                            {formatTime(row.checkOut)}
-                          </p>
-
-                          <p className="mt-1 text-xs font-semibold text-slate-500">
-                            {data?.setting?.officeStartTime || "09:30"} to{" "}
-                            {data?.setting?.officeEndTime || "18:00"} ·{" "}
-                            {readable(row.workLocation)}
-                          </p>
+                          <Link
+                            href={`/staff/my-regularization?date=${encodeURIComponent(
+                              toDateInput(
+                                row.date
+                              )
+                            )}`}
+                            className="rounded-xl border border-blue-200 bg-blue-50 px-3 py-2 text-center text-xs font-black text-blue-700"
+                          >
+                            Update
+                          </Link>
 
                         </div>
-
-                        <Link
-                          href={`/staff/my-regularization?date=${encodeURIComponent(
-                            toDateInput(row.date)
-                          )}`}
-                          className="rounded-xl border border-blue-200 bg-blue-50 px-3 py-2 text-center text-xs font-black text-blue-700"
-                        >
-                          Update
-                        </Link>
-
-                      </div>
-                    );
-                  })}
+                      );
+                    }
+                  )}
 
                 </div>
               )}
 
             </section>
 
-            {/* TEAM PRESENCE */}
-
             <section className="mt-5 rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
 
               <div className="flex flex-wrap items-center justify-between gap-3">
 
                 <div>
+
                   <p className="text-[11px] font-black uppercase tracking-[0.18em] text-blue-700">
                     Team Presence Today
                   </p>
@@ -1071,9 +1871,6 @@ export default function MyAttendancePage() {
                     Coworker Availability
                   </h2>
 
-                  <p className="mt-1 text-sm font-semibold text-slate-500">
-                    Only basic availability is shown.
-                  </p>
                 </div>
 
                 <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-black text-slate-600">
@@ -1084,43 +1881,53 @@ export default function MyAttendancePage() {
 
               <div className="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
 
-                {teamPresence.map((member) => (
-                  <div
-                    key={member.id}
-                    className="flex items-center justify-between gap-3 rounded-xl border border-slate-200 bg-slate-50 p-3"
-                  >
+                {teamPresence.map(
+                  (
+                    member
+                  ) => (
+                    <div
+                      key={
+                        member.id
+                      }
+                      className="flex items-center justify-between gap-3 rounded-xl border border-slate-200 bg-slate-50 p-3"
+                    >
 
-                    <div className="min-w-0">
+                      <div className="min-w-0">
 
-                      <p className="truncate font-black text-slate-950">
-                        {member.name}
-                        {member.isMe ? " (You)" : ""}
-                      </p>
+                        <p className="truncate font-black text-slate-950">
+                          {member.name}
+                          {member.isMe
+                            ? " (You)"
+                            : ""}
+                        </p>
 
-                      <p className="text-xs font-bold text-blue-700">
-                        {member.staffCode}
-                      </p>
+                        <p className="text-xs font-bold text-blue-700">
+                          {member.staffCode}
+                        </p>
+
+                      </div>
+
+                      <span
+                        className={`shrink-0 rounded-full border px-2.5 py-1 text-[10px] font-black ${presenceStyle(
+                          member.status
+                        )}`}
+                      >
+                        {readable(
+                          member.status
+                        )}
+                      </span>
 
                     </div>
-
-                    <span
-                      className={`shrink-0 rounded-full border px-2.5 py-1 text-[10px] font-black ${presenceStyle(
-                        member.status
-                      )}`}
-                    >
-                      {readable(member.status)}
-                    </span>
-
-                  </div>
-                ))}
+                  )
+                )}
 
               </div>
 
             </section>
+
           </>
         ) : (
           <>
-            {/* PUNCH */}
 
             <section className="mt-4 overflow-hidden rounded-3xl border border-blue-200 bg-white shadow-sm">
 
@@ -1135,33 +1942,17 @@ export default function MyAttendancePage() {
                     </p>
 
                     <h2 className="mt-1 text-2xl font-black">
-                      {staff?.name || "Staff Member"}
+                      {staff?.name ||
+                        "Staff Member"}
                     </h2>
 
                     <p className="mt-1 text-sm font-semibold text-blue-100">
-                      Status:{" "}
+                      Work Mode:{" "}
                       <span className="font-black text-white">
-                        {attendance
-                          ? readable(attendance.status)
-                          : data?.holiday?.name
-                            ? `Holiday - ${data.holiday.name}`
-                            : data?.weekOff
-                              ? "Weekly Off"
-                              : "Not Punched"}
+                        {readable(
+                          staff?.workMode
+                        )}
                       </span>
-                    </p>
-
-                  </div>
-
-                  <div className="rounded-2xl bg-white/10 px-4 py-3 text-right">
-
-                    <p className="text-[10px] font-black uppercase text-blue-200">
-                      Shift
-                    </p>
-
-                    <p className="mt-1 font-black">
-                      {data?.setting?.officeStartTime || "09:30"} –{" "}
-                      {data?.setting?.officeEndTime || "18:00"}
                     </p>
 
                   </div>
@@ -1176,13 +1967,17 @@ export default function MyAttendancePage() {
 
                   <PunchMetric
                     label="Punch In"
-                    value={formatShortTime(attendance?.checkIn)}
+                    value={formatShortTime(
+                      attendance?.checkIn
+                    )}
                     valueClass="text-emerald-700"
                   />
 
                   <PunchMetric
                     label="Punch Out"
-                    value={formatShortTime(attendance?.checkOut)}
+                    value={formatShortTime(
+                      attendance?.checkOut
+                    )}
                     valueClass="text-blue-700"
                   />
 
@@ -1198,7 +1993,9 @@ export default function MyAttendancePage() {
 
                   <PunchMetric
                     label="Working"
-                    value={formatMinutes(attendance?.workingMinutes)}
+                    value={formatMinutes(
+                      attendance?.workingMinutes
+                    )}
                     valueClass="text-violet-700"
                   />
 
@@ -1209,27 +2006,63 @@ export default function MyAttendancePage() {
                   !data?.weekOff && (
                     <div className="mt-5 rounded-2xl border border-slate-200 bg-slate-50 p-4">
 
+                      {workLocation ===
+                        "OFFICE" && (
+                        <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm font-bold text-amber-800">
+
+                          📍 Office attendance requires GPS accuracy within{" "}
+                          {data?.setting?.maxGpsAccuracyMeters || 100} metres and you must be within{" "}
+                          {data?.setting?.officeRadiusMeters || 100} metres of your assigned office
+                          {staff?.office?.name ? ` (${staff.office.name})` : ""}.
+
+                        </div>
+                      )}
+
                       <div className="grid gap-3 md:grid-cols-3">
 
                         <label>
 
                           <span className="mb-1 block text-xs font-black text-slate-600">
-                            Location
+                            Work Location
                           </span>
 
                           <select
-                            value={workLocation}
-                            onChange={(event) =>
-                              setWorkLocation(event.target.value)
+                            value={
+                              workLocation
                             }
-                            className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 font-bold"
+                            disabled={
+                              locationLocked
+                            }
+                            onChange={(
+                              event
+                            ) =>
+                              setWorkLocation(
+                                event.target
+                                  .value as WorkLocation
+                              )
+                            }
+                            className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 font-bold disabled:bg-slate-100 disabled:text-slate-500"
                           >
-                            <option value="OFFICE">Office</option>
-                            <option value="WORK_FROM_HOME">
+
+                            <option value="OFFICE">
+                              Office
+                            </option>
+
+                            <option value="HOME">
                               Work From Home
                             </option>
-                            <option value="FIELD">Out Duty / Field</option>
+
+                            <option value="FIELD">
+                              Out Duty / Field
+                            </option>
+
                           </select>
+
+                          {locationLocked && (
+                            <p className="mt-1 text-[11px] font-bold text-slate-500">
+                              Controlled by your Staff Work Mode.
+                            </p>
+                          )}
 
                         </label>
 
@@ -1241,16 +2074,43 @@ export default function MyAttendancePage() {
 
                           <button
                             type="button"
-                            onClick={captureLocation}
-                            disabled={locationLoading}
+                            onClick={
+                              captureLocation
+                            }
+                            disabled={
+                              locationLoading
+                            }
                             className="w-full rounded-xl border border-blue-200 bg-blue-50 px-3 py-2.5 text-sm font-black text-blue-700 disabled:opacity-50"
                           >
                             {locationLoading
                               ? "Getting Location..."
                               : location
-                                ? `✓ GPS ${Math.round(location.accuracy)}m`
+                                ? `✓ GPS ${Math.round(
+                                    location.accuracy
+                                  )}m`
                                 : "📍 Capture GPS"}
                           </button>
+
+                          {location && (
+                            <p
+                              className={`mt-1 text-[11px] font-black ${
+                                location.accuracy <=
+                                Number(
+                                  data?.setting
+                                    ?.maxGpsAccuracyMeters ||
+                                  100
+                                )
+                                  ? "text-emerald-700"
+                                  : "text-red-700"
+                              }`}
+                            >
+                              Accuracy:{" "}
+                              {Math.round(
+                                location.accuracy
+                              )}{" "}
+                              metres
+                            </p>
+                          )}
 
                         </div>
 
@@ -1262,8 +2122,13 @@ export default function MyAttendancePage() {
 
                           <button
                             type="button"
-                            onClick={() => void openCamera()}
-                            disabled={cameraStarting || photoUploading}
+                            onClick={() =>
+                              void openCamera()
+                            }
+                            disabled={
+                              cameraStarting ||
+                              photoUploading
+                            }
                             className="w-full rounded-xl border border-violet-200 bg-violet-50 px-3 py-2.5 text-sm font-black text-violet-700 disabled:opacity-50"
                           >
                             {photoUploading
@@ -1281,8 +2146,10 @@ export default function MyAttendancePage() {
                         <div className="mt-3">
 
                           <img
-                            src={photoPreview}
-                            alt="Selfie preview"
+                            src={
+                              photoPreview
+                            }
+                            alt="Attendance selfie preview"
                             className="h-24 w-24 rounded-2xl border object-cover"
                           />
 
@@ -1294,23 +2161,37 @@ export default function MyAttendancePage() {
                         {!hasPunchedIn ? (
                           <button
                             type="button"
-                            onClick={() => void punch("PUNCH_IN")}
-                            disabled={actionLoading || photoUploading}
+                            onClick={() =>
+                              void punch(
+                                "PUNCH_IN"
+                              )
+                            }
+                            disabled={
+                              actionLoading ||
+                              photoUploading
+                            }
                             className="w-full rounded-2xl bg-emerald-700 px-5 py-4 text-lg font-black text-white shadow-sm disabled:opacity-50"
                           >
                             {actionLoading
-                              ? "Saving..."
+                              ? "Verifying & Saving..."
                               : "🟢 PUNCH IN"}
                           </button>
                         ) : (
                           <button
                             type="button"
-                            onClick={() => void punch("PUNCH_OUT")}
-                            disabled={actionLoading || photoUploading}
+                            onClick={() =>
+                              void punch(
+                                "PUNCH_OUT"
+                              )
+                            }
+                            disabled={
+                              actionLoading ||
+                              photoUploading
+                            }
                             className="w-full rounded-2xl bg-red-700 px-5 py-4 text-lg font-black text-white shadow-sm disabled:opacity-50"
                           >
                             {actionLoading
-                              ? "Saving..."
+                              ? "Verifying & Saving..."
                               : "🔴 PUNCH OUT"}
                           </button>
                         )}
@@ -1323,12 +2204,13 @@ export default function MyAttendancePage() {
               </div>
 
             </section>
+
           </>
         )}
 
       </section>
 
-      {/* CAMERA MODAL */}
+      {/* CAMERA */}
 
       {cameraOpen && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 p-4">
@@ -1338,6 +2220,7 @@ export default function MyAttendancePage() {
             <div className="flex items-center justify-between border-b px-4 py-3">
 
               <div>
+
                 <p className="text-xs font-black uppercase tracking-wide text-violet-700">
                   Attendance Selfie
                 </p>
@@ -1345,11 +2228,14 @@ export default function MyAttendancePage() {
                 <h2 className="font-black text-slate-950">
                   Front Camera
                 </h2>
+
               </div>
 
               <button
                 type="button"
-                onClick={stopCamera}
+                onClick={
+                  stopCamera
+                }
                 className="rounded-xl bg-slate-100 px-3 py-2 font-black text-slate-700"
               >
                 ✕
@@ -1362,7 +2248,9 @@ export default function MyAttendancePage() {
               <div className="relative aspect-square overflow-hidden rounded-2xl bg-slate-950">
 
                 <video
-                  ref={videoRef}
+                  ref={
+                    videoRef
+                  }
                   autoPlay
                   muted
                   playsInline
@@ -1387,8 +2275,13 @@ export default function MyAttendancePage() {
 
               <button
                 type="button"
-                onClick={() => void captureSelfie()}
-                disabled={cameraStarting || photoUploading}
+                onClick={() =>
+                  void captureSelfie()
+                }
+                disabled={
+                  cameraStarting ||
+                  photoUploading
+                }
                 className="w-full rounded-2xl bg-violet-700 px-5 py-3.5 font-black text-white disabled:opacity-50"
               >
                 {photoUploading
@@ -1416,14 +2309,21 @@ function SummaryMetric({
   label,
   valueClass,
 }: {
-  value: string;
-  label: string;
-  valueClass: string;
+  value:
+    string;
+
+  label:
+    string;
+
+  valueClass:
+    string;
 }) {
   return (
     <div>
 
-      <p className={`text-3xl font-black ${valueClass}`}>
+      <p
+        className={`text-3xl font-black ${valueClass}`}
+      >
         {value}
       </p>
 
@@ -1439,8 +2339,11 @@ function InfoPanel({
   title,
   lines,
 }: {
-  title: string;
-  lines: string[];
+  title:
+    string;
+
+  lines:
+    string[];
 }) {
   return (
     <div>
@@ -1451,14 +2354,20 @@ function InfoPanel({
 
       <div className="mt-2 space-y-1">
 
-        {lines.map((line) => (
-          <p
-            key={line}
-            className="text-sm font-semibold text-slate-600"
-          >
-            {line}
-          </p>
-        ))}
+        {lines.map(
+          (
+            line
+          ) => (
+            <p
+              key={
+                line
+              }
+              className="text-sm font-semibold text-slate-600"
+            >
+              {line}
+            </p>
+          )
+        )}
 
       </div>
 
@@ -1471,9 +2380,14 @@ function PunchMetric({
   value,
   valueClass,
 }: {
-  label: string;
-  value: string;
-  valueClass: string;
+  label:
+    string;
+
+  value:
+    string;
+
+  valueClass:
+    string;
 }) {
   return (
     <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
@@ -1482,7 +2396,9 @@ function PunchMetric({
         {label}
       </p>
 
-      <p className={`mt-1 text-xl font-black ${valueClass}`}>
+      <p
+        className={`mt-1 text-xl font-black ${valueClass}`}
+      >
         {value}
       </p>
 

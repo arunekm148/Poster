@@ -48,6 +48,7 @@ model User {
   policies                 Policy[]
   renewalFollowUps         RenewalFollowUp[]
   staffs                   Staff[]
+  offices                  Office[]
   StaffAttendance          StaffAttendance[]
   subAgents                SubAgent[]
   supportReplies           SupportMessage[]           @relation("SupportMessageAdmin")
@@ -708,9 +709,37 @@ model PlatformSetting {
   updatedAt   DateTime @updatedAt
 }
 
+model Office {
+  id           String   @id @default(cuid())
+  userId       String
+  code         String
+  name         String
+  address      String?
+  district     String?
+  state        String?
+  pincode      String?
+  latitude     Decimal? @db.Decimal(10, 7)
+  longitude    Decimal? @db.Decimal(10, 7)
+  radiusMeters Int      @default(100)
+  isHeadOffice Boolean  @default(false)
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  user       User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  staff      Staff[]
+  attendance StaffAttendance[]
+
+  @@unique([userId, code])
+  @@index([userId])
+  @@index([userId, isActive])
+  @@index([userId, name])
+}
+
 model Staff {
   id                       String                     @id @default(cuid())
   userId                   String
+  officeId                 String?
   staffCode                String
   name                     String
   phone                    String                     @unique
@@ -739,6 +768,7 @@ model Staff {
   supervisor               Staff?                     @relation("StaffSupervisor", fields: [supervisorId], references: [id])
   teamMembers              Staff[]                    @relation("StaffSupervisor")
   user                     User                       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  office                   Office?                    @relation(fields: [officeId], references: [id], onDelete: SetNull)
   attendance               StaffAttendance[]
   followUpsCreated         FollowUp[]                 @relation("FollowUpCreatedByStaff")
 
@@ -770,6 +800,8 @@ model Staff {
 
   @@unique([userId, staffCode])
   @@index([userId])
+  @@index([officeId])
+  @@index([userId, officeId])
   @@index([supervisorId])
   @@index([staffRole])
   @@index([isActive])
@@ -888,6 +920,7 @@ model StaffAttendance {
   id                       String                     @id @default(cuid())
   staffId                  String
   userId                   String
+  officeId                 String?
   date                     DateTime
   checkIn                  DateTime?
   checkOut                 DateTime?
@@ -921,11 +954,14 @@ model StaffAttendance {
   checkOutLongitude        Decimal?                   @db.Decimal(10, 7)
   AttendanceRegularization AttendanceRegularization[]
   staff                    Staff                      @relation(fields: [staffId], references: [id], onDelete: Cascade)
+  office                   Office?                    @relation(fields: [officeId], references: [id], onDelete: SetNull)
   User                     User                       @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([staffId, date])
   @@index([staffId])
   @@index([userId])
+  @@index([officeId])
+  @@index([userId, officeId, date])
   @@index([date])
   @@index([staffId, date])
   @@index([status])

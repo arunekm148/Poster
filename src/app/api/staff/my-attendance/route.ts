@@ -1,5 +1,17 @@
 import { NextRequest, NextResponse } from "next/server";
+
 import prisma from "@/lib/prisma";
+import {
+  getSessionFromRequest,
+  isStaffSession,
+} from "@/lib/session";
+
+/* -------------------------------------------------------------------------- */
+/* SECURITY CONSTANTS                                                         */
+/* -------------------------------------------------------------------------- */
+
+const DEFAULT_OFFICE_RADIUS_METERS = 100;
+const DEFAULT_MAX_GPS_ACCURACY_METERS = 100;
 
 /* -------------------------------------------------------------------------- */
 /* HELPERS                                                                    */
@@ -10,19 +22,46 @@ function clean(value: unknown) {
 }
 
 function numberOrNull(value: unknown) {
-  const n = Number(value);
-  return Number.isFinite(n) ? n : null;
+  if (
+    value === null ||
+    value === undefined ||
+    value === ""
+  ) {
+    return null;
+  }
+
+  const valueNumber =
+    Number(value);
+
+  return Number.isFinite(valueNumber)
+    ? valueNumber
+    : null;
 }
 
-function getIndiaDateKey(date = new Date()) {
-  return date.toLocaleDateString("en-CA", {
-    timeZone: "Asia/Kolkata",
-  });
+function getIndiaDateKey(
+  date = new Date()
+) {
+  return date.toLocaleDateString(
+    "en-CA",
+    {
+      timeZone:
+        "Asia/Kolkata",
+    }
+  );
 }
 
-function getIndiaDayRange(dateKey: string) {
-  const start = new Date(`${dateKey}T00:00:00+05:30`);
-  const end = new Date(`${dateKey}T23:59:59.999+05:30`);
+function getIndiaDayRange(
+  dateKey: string
+) {
+  const start =
+    new Date(
+      `${dateKey}T00:00:00+05:30`
+    );
+
+  const end =
+    new Date(
+      `${dateKey}T23:59:59.999+05:30`
+    );
 
   return {
     start,
@@ -30,17 +69,29 @@ function getIndiaDayRange(dateKey: string) {
   };
 }
 
-function minutesFromTime(value: string | null | undefined) {
-  const text = clean(value);
+function minutesFromTime(
+  value:
+    | string
+    | null
+    | undefined
+) {
+  const text =
+    clean(value);
 
-  const match = /^(\d{1,2}):(\d{2})$/.exec(text);
+  const match =
+    /^(\d{1,2}):(\d{2})$/.exec(
+      text
+    );
 
   if (!match) {
     return null;
   }
 
-  const hour = Number(match[1]);
-  const minute = Number(match[2]);
+  const hour =
+    Number(match[1]);
+
+  const minute =
+    Number(match[2]);
 
   if (
     !Number.isInteger(hour) ||
@@ -53,26 +104,57 @@ function minutesFromTime(value: string | null | undefined) {
     return null;
   }
 
-  return hour * 60 + minute;
+  return (
+    hour * 60 +
+    minute
+  );
 }
 
-function indiaMinutesNow(date = new Date()) {
-  const parts = new Intl.DateTimeFormat("en-GB", {
-    timeZone: "Asia/Kolkata",
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: false,
-  }).formatToParts(date);
+function indiaMinutesNow(
+  date = new Date()
+) {
+  const parts =
+    new Intl.DateTimeFormat(
+      "en-GB",
+      {
+        timeZone:
+          "Asia/Kolkata",
 
-  const hour = Number(
-    parts.find((item) => item.type === "hour")?.value || 0
+        hour:
+          "2-digit",
+
+        minute:
+          "2-digit",
+
+        hour12:
+          false,
+      }
+    ).formatToParts(
+      date
+    );
+
+  const hour =
+    Number(
+      parts.find(
+        (item) =>
+          item.type ===
+          "hour"
+      )?.value || 0
+    );
+
+  const minute =
+    Number(
+      parts.find(
+        (item) =>
+          item.type ===
+          "minute"
+      )?.value || 0
+    );
+
+  return (
+    hour * 60 +
+    minute
   );
-
-  const minute = Number(
-    parts.find((item) => item.type === "minute")?.value || 0
-  );
-
-  return hour * 60 + minute;
 }
 
 function haversineMeters(
@@ -81,74 +163,194 @@ function haversineMeters(
   lat2: number,
   lon2: number
 ) {
-  const earthRadius = 6371000;
+  const earthRadius =
+    6371000;
 
-  const toRad = (value: number) =>
-    (value * Math.PI) / 180;
+  const toRad = (
+    value: number
+  ) =>
+    (value *
+      Math.PI) /
+    180;
 
   const dLat =
-    toRad(lat2 - lat1);
+    toRad(
+      lat2 -
+        lat1
+    );
 
   const dLon =
-    toRad(lon2 - lon1);
+    toRad(
+      lon2 -
+        lon1
+    );
 
   const a =
-    Math.sin(dLat / 2) *
-      Math.sin(dLat / 2) +
-    Math.cos(toRad(lat1)) *
-      Math.cos(toRad(lat2)) *
-      Math.sin(dLon / 2) *
-      Math.sin(dLon / 2);
+    Math.sin(
+      dLat / 2
+    ) *
+      Math.sin(
+        dLat / 2
+      ) +
+    Math.cos(
+      toRad(lat1)
+    ) *
+      Math.cos(
+        toRad(lat2)
+      ) *
+      Math.sin(
+        dLon / 2
+      ) *
+      Math.sin(
+        dLon / 2
+      );
 
   const c =
     2 *
     Math.atan2(
       Math.sqrt(a),
-      Math.sqrt(1 - a)
+      Math.sqrt(
+        1 - a
+      )
     );
 
-  return earthRadius * c;
+  return (
+    earthRadius *
+    c
+  );
 }
 
-function getRequestIp(request: NextRequest) {
-  const forwarded =
-    request.headers.get("x-forwarded-for");
+/* -------------------------------------------------------------------------- */
+/* IP                                                                         */
+/* -------------------------------------------------------------------------- */
 
-  if (forwarded) {
-    return forwarded.split(",")[0]?.trim() || null;
+function getRequestIp(
+  request: NextRequest
+) {
+  /*
+   * Cloudflare should be preferred because the live site
+   * is behind Cloudflare / Hostinger.
+   */
+
+  const cloudflareIp =
+    clean(
+      request.headers.get(
+        "cf-connecting-ip"
+      )
+    );
+
+  if (cloudflareIp) {
+    return cloudflareIp;
   }
 
+  const forwarded =
+    clean(
+      request.headers.get(
+        "x-forwarded-for"
+      )
+    );
+
+  if (forwarded) {
+    return (
+      forwarded
+        .split(",")[0]
+        ?.trim() ||
+      null
+    );
+  }
+
+  const realIp =
+    clean(
+      request.headers.get(
+        "x-real-ip"
+      )
+    );
+
   return (
-    request.headers.get("x-real-ip") ||
-    request.headers.get("cf-connecting-ip") ||
+    realIp ||
     null
   );
 }
 
-async function resolveStaff(
-  userId: string,
-  staffId: string
+/* -------------------------------------------------------------------------- */
+/* STAFF                                                                      */
+/* -------------------------------------------------------------------------- */
+
+async function resolveLoggedInStaff(
+  request: NextRequest
 ) {
-  return prisma.staff.findFirst({
-    where: {
-      id: staffId,
-      userId,
-      isActive: true,
-    },
-    select: {
-      id: true,
-      userId: true,
-      staffCode: true,
-      name: true,
-      phone: true,
-      staffRole: true,
-      designation: true,
-      department: true,
-      workMode: true,
-      supervisorId: true,
-    },
-  });
+  const session =
+    getSessionFromRequest(
+      request
+    );
+
+  if (
+    !session ||
+    !isStaffSession(
+      session
+    ) ||
+    !session.staffId
+  ) {
+    return null;
+  }
+
+  const staff =
+    await prisma.staff.findFirst({
+      where: {
+        id:
+          session.staffId,
+
+        userId:
+          session.userId,
+
+        isActive:
+          true,
+
+        loginEnabled:
+          true,
+      },
+
+      select: {
+        id: true,
+        userId: true,
+        staffCode: true,
+        name: true,
+        phone: true,
+        staffRole: true,
+        designation: true,
+        department: true,
+        workMode: true,
+        supervisorId: true,
+        officeId: true,
+
+        office: {
+          select: {
+            id: true,
+            code: true,
+            name: true,
+            latitude: true,
+            longitude: true,
+            radiusMeters: true,
+            isHeadOffice: true,
+            isActive: true,
+          },
+        },
+      },
+    });
+
+  if (!staff) {
+    return null;
+  }
+
+  return {
+    session,
+    staff,
+  };
 }
+
+/* -------------------------------------------------------------------------- */
+/* SETTINGS                                                                   */
+/* -------------------------------------------------------------------------- */
 
 async function getAttendanceSetting(
   userId: string
@@ -157,161 +359,334 @@ async function getAttendanceSetting(
     where: {
       userId,
     },
+
     select: {
-      officeStartTime: true,
-      officeEndTime: true,
-      graceMinutes: true,
-      halfDayCheckInTime: true,
-      minimumFullDayMinutes: true,
-      minimumHalfDayMinutes: true,
-      timezone: true,
-      weekOffDays: true,
+      officeStartTime:
+        true,
 
-      gpsAttendanceEnabled: true,
-      requireGpsForCheckIn: true,
-      requireGpsForCheckOut: true,
-      maxGpsAccuracyMeters: true,
-      officeLatitude: true,
-      officeLongitude: true,
-      officeRadiusMeters: true,
+      officeEndTime:
+        true,
 
-      requireCheckInPhoto: true,
-      requireCheckOutPhoto: true,
-      requireCheckInIp: true,
-      requireCheckOutIp: true,
+      graceMinutes:
+        true,
+
+      halfDayCheckInTime:
+        true,
+
+      minimumFullDayMinutes:
+        true,
+
+      minimumHalfDayMinutes:
+        true,
+
+      timezone:
+        true,
+
+      weekOffDays:
+        true,
+
+      gpsAttendanceEnabled:
+        true,
+
+      requireGpsForCheckIn:
+        true,
+
+      requireGpsForCheckOut:
+        true,
+
+      maxGpsAccuracyMeters:
+        true,
+
+      officeLatitude:
+        true,
+
+      officeLongitude:
+        true,
+
+      officeRadiusMeters:
+        true,
+
+      requireCheckInPhoto:
+        true,
+
+      requireCheckOutPhoto:
+        true,
+
+      requireCheckInIp:
+        true,
+
+      requireCheckOutIp:
+        true,
     },
   });
 }
 
-function getGpsVerification({
+/* -------------------------------------------------------------------------- */
+/* WORK LOCATION SECURITY                                                     */
+/* -------------------------------------------------------------------------- */
+
+type AttendanceLocation =
+  | "OFFICE"
+  | "HOME"
+  | "FIELD";
+
+function getAllowedWorkLocation(
+  staffWorkMode:
+    | string
+    | null
+    | undefined,
+
+  requestedLocation:
+    string
+) {
+  const mode =
+    clean(
+      staffWorkMode
+    ).toUpperCase();
+
+  const requested =
+    clean(
+      requestedLocation
+    ).toUpperCase();
+
+  /*
+   * OFFICE employee can never bypass office geofence.
+   */
+  if (
+    mode ===
+    "OFFICE"
+  ) {
+    return {
+      location:
+        "OFFICE" as AttendanceLocation,
+
+      canChoose:
+        false,
+    };
+  }
+
+  if (
+    mode ===
+    "WORK_FROM_HOME"
+  ) {
+    return {
+      location:
+        "HOME" as AttendanceLocation,
+
+      canChoose:
+        false,
+    };
+  }
+
+  if (
+    mode ===
+    "FIELD"
+  ) {
+    return {
+      location:
+        "FIELD" as AttendanceLocation,
+
+      canChoose:
+        false,
+    };
+  }
+
+  /*
+   * HYBRID may choose.
+   */
+  if (
+    mode ===
+    "HYBRID"
+  ) {
+    if (
+      requested ===
+      "HOME"
+    ) {
+      return {
+        location:
+          "HOME" as AttendanceLocation,
+
+        canChoose:
+          true,
+      };
+    }
+
+    if (
+      requested ===
+      "FIELD"
+    ) {
+      return {
+        location:
+          "FIELD" as AttendanceLocation,
+
+        canChoose:
+          true,
+      };
+    }
+
+    return {
+      location:
+        "OFFICE" as AttendanceLocation,
+
+      canChoose:
+        true,
+    };
+  }
+
+  /*
+   * Unknown/legacy values fail safely to OFFICE.
+   */
+  return {
+    location:
+      "OFFICE" as AttendanceLocation,
+
+    canChoose:
+      false,
+  };
+}
+
+/* -------------------------------------------------------------------------- */
+/* GPS                                                                        */
+/* -------------------------------------------------------------------------- */
+
+function verifyGps({
   latitude,
   longitude,
   accuracy,
-  setting,
+  officeLatitude,
+  officeLongitude,
+  officeRadiusMeters,
+  maxGpsAccuracyMeters,
 }: {
-  latitude: number | null;
-  longitude: number | null;
-  accuracy: number | null;
-  setting: Awaited<
-    ReturnType<typeof getAttendanceSetting>
-  >;
+  latitude:
+    number | null;
+
+  longitude:
+    number | null;
+
+  accuracy:
+    number | null;
+
+  officeLatitude:
+    number | null;
+
+  officeLongitude:
+    number | null;
+
+  officeRadiusMeters:
+    number;
+
+  maxGpsAccuracyMeters:
+    number;
 }) {
-  const officeLatitude =
-    numberOrNull(setting?.officeLatitude);
-
-  const officeLongitude =
-    numberOrNull(setting?.officeLongitude);
-
-  const radius =
-    Number(
-      setting?.officeRadiusMeters ??
-      200
-    );
-
-  const maxAccuracy =
-    Number(
-      setting?.maxGpsAccuracyMeters ??
-      100
-    );
-
   if (
     latitude === null ||
     longitude === null
   ) {
     return {
-      distance: null,
-      geofencePassed: null,
-      accuracyPassed: null,
+      distance:
+        null,
+
+      accuracyPassed:
+        false,
+
+      geofencePassed:
+        false,
     };
   }
 
-  const distance =
-    officeLatitude !== null &&
-    officeLongitude !== null
-      ? Math.round(
-          haversineMeters(
-            latitude,
-            longitude,
-            officeLatitude,
-            officeLongitude
-          )
-        )
-      : null;
-
   const accuracyPassed =
-    accuracy === null
-      ? null
-      : accuracy <= maxAccuracy;
+    accuracy !== null &&
+    accuracy <=
+      maxGpsAccuracyMeters;
+
+  let distance:
+    number | null =
+    null;
+
+  if (
+    officeLatitude !==
+      null &&
+    officeLongitude !==
+      null
+  ) {
+    distance =
+      Math.round(
+        haversineMeters(
+          latitude,
+          longitude,
+          officeLatitude,
+          officeLongitude
+        )
+      );
+  }
 
   const geofencePassed =
-    distance === null
-      ? null
-      : distance <= radius;
+    distance !== null &&
+    distance <=
+      officeRadiusMeters;
 
   return {
     distance,
-    geofencePassed,
     accuracyPassed,
+    geofencePassed,
   };
 }
 
 /* -------------------------------------------------------------------------- */
-/* GET - MY ATTENDANCE + SAFE TEAM PRESENCE                                   */
+/* GET                                                                        */
 /* -------------------------------------------------------------------------- */
 
 export async function GET(
   request: NextRequest
 ) {
   try {
-    const { searchParams } =
-      new URL(request.url);
+    const identity =
+      await resolveLoggedInStaff(
+        request
+      );
+
+    if (!identity) {
+      return NextResponse.json(
+        {
+          success:
+            false,
+
+          message:
+            "Staff session is invalid or expired. Please login again.",
+        },
+        {
+          status:
+            401,
+        }
+      );
+    }
+
+    const {
+      staff,
+    } =
+      identity;
 
     const userId =
-      clean(
-        searchParams.get("userId")
-      );
+      staff.userId;
 
     const staffId =
-      clean(
-        searchParams.get("staffId")
-      );
+      staff.id;
 
-    if (!userId || !staffId) {
-      return NextResponse.json(
-        {
-          success: false,
-          message:
-            "User ID and Staff ID are required.",
-        },
-        {
-          status: 400,
-        }
+    const {
+      searchParams,
+    } =
+      new URL(
+        request.url
       );
-    }
-
-    const staff =
-      await resolveStaff(
-        userId,
-        staffId
-      );
-
-    if (!staff) {
-      return NextResponse.json(
-        {
-          success: false,
-          message:
-            "Staff account not found.",
-        },
-        {
-          status: 404,
-        }
-      );
-    }
 
     const dateKey =
       clean(
-        searchParams.get("date")
-      ) || getIndiaDateKey();
+        searchParams.get(
+          "date"
+        )
+      ) ||
+      getIndiaDateKey();
 
     const {
       start,
@@ -322,7 +697,9 @@ export async function GET(
       );
 
     const historyStart =
-      new Date(start);
+      new Date(
+        start
+      );
 
     historyStart.setDate(
       historyStart.getDate() -
@@ -347,13 +724,19 @@ export async function GET(
           where: {
             userId,
             staffId,
+
             date: {
-              gte: start,
-              lte: end,
+              gte:
+                start,
+
+              lte:
+                end,
             },
           },
+
           orderBy: {
-            date: "desc",
+            date:
+              "desc",
           },
         }),
 
@@ -361,87 +744,149 @@ export async function GET(
           where: {
             userId,
             staffId,
+
             date: {
               gte:
                 historyStart,
-              lte: end,
+
+              lte:
+                end,
             },
           },
+
           orderBy: {
-            date: "desc",
+            date:
+              "desc",
           },
-          take: 31,
+
+          take:
+            31,
+
           select: {
-            id: true,
-            date: true,
-            checkIn: true,
-            checkOut: true,
-            status: true,
-            workLocation: true,
-            lateMinutes: true,
-            workingMinutes: true,
-            adminEdited: true,
+            id:
+              true,
+
+            date:
+              true,
+
+            checkIn:
+              true,
+
+            checkOut:
+              true,
+
+            status:
+              true,
+
+            workLocation:
+              true,
+
+            lateMinutes:
+              true,
+
+            workingMinutes:
+              true,
+
+            adminEdited:
+              true,
           },
         }),
 
         prisma.staff.findMany({
           where: {
             userId,
-            isActive: true,
+            isActive:
+              true,
           },
+
           orderBy: {
-            name: "asc",
+            name:
+              "asc",
           },
+
           select: {
-            id: true,
-            staffCode: true,
-            name: true,
+            id:
+              true,
+
+            staffCode:
+              true,
+
+            name:
+              true,
           },
         }),
 
         prisma.staffAttendance.findMany({
           where: {
             userId,
+
             date: {
-              gte: start,
-              lte: end,
+              gte:
+                start,
+
+              lte:
+                end,
             },
           },
+
           select: {
-            staffId: true,
-            status: true,
-            checkIn: true,
+            staffId:
+              true,
+
+            status:
+              true,
+
+            checkIn:
+              true,
           },
         }),
 
         prisma.leaveRequest.findMany({
           where: {
             userId,
-            status: "APPROVED",
+
+            status:
+              "APPROVED",
+
             fromDate: {
-              lte: end,
+              lte:
+                end,
             },
+
             toDate: {
-              gte: start,
+              gte:
+                start,
             },
           },
+
           select: {
-            staffId: true,
+            staffId:
+              true,
           },
         }),
 
         prisma.attendanceHoliday.findFirst({
           where: {
             userId,
-            isActive: true,
+
+            isActive:
+              true,
+
             date: {
-              gte: start,
-              lte: end,
+              gte:
+                start,
+
+              lte:
+                end,
             },
           },
+
           select: {
-            id: true,
-            name: true,
+            id:
+              true,
+
+            name:
+              true,
           },
         }),
       ]);
@@ -465,12 +910,15 @@ export async function GET(
       );
 
     const weekDay =
-      new Date(start)
+      new Date(
+        start
+      )
         .toLocaleDateString(
           "en-US",
           {
             weekday:
               "long",
+
             timeZone:
               setting?.timezone ||
               "Asia/Kolkata",
@@ -480,25 +928,21 @@ export async function GET(
 
     const weekOff =
       setting?.weekOffDays
-        ?.map((item) =>
-          String(
-            item
-          ).toUpperCase()
+        ?.map(
+          (item) =>
+            String(
+              item
+            ).toUpperCase()
         )
         .includes(
           weekDay
-        ) ?? false;
+        ) ??
+      false;
 
     const isToday =
       dateKey ===
       getIndiaDateKey();
 
-    /*
-     * Coworker view is intentionally privacy-minimal:
-     * only name, staff code and broad status.
-     * No punch times, IP, GPS, photos, late minutes,
-     * working hours, leave reason or history.
-     */
     const teamPresence =
       coworkers.map(
         (member) => {
@@ -515,7 +959,9 @@ export async function GET(
             | "WEEK_OFF"
             | "HOLIDAY";
 
-          if (record?.checkIn) {
+          if (
+            record?.checkIn
+          ) {
             status =
               "PRESENT";
           } else if (
@@ -545,11 +991,15 @@ export async function GET(
           return {
             id:
               member.id,
+
             staffCode:
               member.staffCode,
+
             name:
               member.name,
+
             status,
+
             isMe:
               member.id ===
               staffId,
@@ -558,15 +1008,44 @@ export async function GET(
       );
 
     return NextResponse.json({
-      success: true,
+      success:
+        true,
+
       date:
         dateKey,
+
       staff,
+
       attendance:
         myAttendance,
+
       history:
         myHistory,
-      setting,
+
+      setting: {
+        ...setting,
+
+        /*
+         * Office attendance now uses the Staff member's assigned Office.
+         * Legacy AttendanceSetting office coordinates are no longer used
+         * for OFFICE punches.
+         */
+        officeRadiusMeters:
+          Number(
+            staff.office?.radiusMeters ??
+            DEFAULT_OFFICE_RADIUS_METERS
+          ),
+
+        maxGpsAccuracyMeters:
+          Math.min(
+            Number(
+              setting?.maxGpsAccuracyMeters ??
+              DEFAULT_MAX_GPS_ACCURACY_METERS
+            ),
+            DEFAULT_MAX_GPS_ACCURACY_METERS
+          ),
+      },
+
       holiday,
       weekOff,
       teamPresence,
@@ -579,49 +1058,109 @@ export async function GET(
 
     return NextResponse.json(
       {
-        success: false,
+        success:
+          false,
+
         message:
           error instanceof Error
             ? error.message
             : "Unable to load attendance.",
       },
       {
-        status: 500,
+        status:
+          500,
       }
     );
   }
 }
 
 /* -------------------------------------------------------------------------- */
-/* POST - PUNCH IN / PUNCH OUT                                                */
+/* POST                                                                       */
 /* -------------------------------------------------------------------------- */
 
 export async function POST(
   request: NextRequest
 ) {
   try {
+    const identity =
+      await resolveLoggedInStaff(
+        request
+      );
+
+    if (!identity) {
+      return NextResponse.json(
+        {
+          success:
+            false,
+
+          message:
+            "Staff session is invalid or expired. Please login again.",
+        },
+        {
+          status:
+            401,
+        }
+      );
+    }
+
+    const {
+      staff,
+    } =
+      identity;
+
+    const userId =
+      staff.userId;
+
+    const staffId =
+      staff.id;
+
     const body =
       await request.json();
 
-    const userId =
-      clean(body.userId);
-
-    const staffId =
-      clean(body.staffId);
-
     const action =
-      clean(body.action)
-        .toUpperCase();
+      clean(
+        body.action
+      ).toUpperCase();
 
-    const workLocation =
+    if (
+      ![
+        "PUNCH_IN",
+        "PUNCH_OUT",
+      ].includes(
+        action
+      )
+    ) {
+      return NextResponse.json(
+        {
+          success:
+            false,
+
+          message:
+            "Invalid attendance action.",
+        },
+        {
+          status:
+            400,
+        }
+      );
+    }
+
+    const requestedLocation =
       clean(
         body.workLocation
-      ) || "OFFICE";
+      );
+
+    const requestedResolvedLocation =
+      getAllowedWorkLocation(
+        staff.workMode,
+        requestedLocation
+      );
 
     const photoUrl =
       clean(
         body.photoUrl
-      ) || null;
+      ) ||
+      null;
 
     const latitude =
       numberOrNull(
@@ -638,48 +1177,30 @@ export async function POST(
         body.accuracy
       );
 
-    if (
-      !userId ||
-      !staffId ||
-      ![
-        "PUNCH_IN",
-        "PUNCH_OUT",
-      ].includes(action)
-    ) {
-      return NextResponse.json(
-        {
-          success: false,
-          message:
-            "Valid Staff and attendance action are required.",
-        },
-        {
-          status: 400,
-        }
-      );
-    }
-
-    const staff =
-      await resolveStaff(
-        userId,
-        staffId
-      );
-
-    if (!staff) {
-      return NextResponse.json(
-        {
-          success: false,
-          message:
-            "Staff account not found.",
-        },
-        {
-          status: 404,
-        }
-      );
-    }
-
     const setting =
       await getAttendanceSetting(
         userId
+      );
+
+    const assignedOffice =
+      staff.office &&
+      staff.office.isActive
+        ? staff.office
+        : null;
+
+    const officeRadiusMeters =
+      Number(
+        assignedOffice?.radiusMeters ??
+        DEFAULT_OFFICE_RADIUS_METERS
+      );
+
+    const maxGpsAccuracyMeters =
+      Math.min(
+        Number(
+          setting?.maxGpsAccuracyMeters ??
+          DEFAULT_MAX_GPS_ACCURACY_METERS
+        ),
+        DEFAULT_MAX_GPS_ACCURACY_METERS
       );
 
     const now =
@@ -703,16 +1224,68 @@ export async function POST(
         where: {
           userId,
           staffId,
+
           date: {
-            gte: start,
-            lte: end,
+            gte:
+              start,
+
+            lte:
+              end,
           },
         },
+
         orderBy: {
           createdAt:
             "desc",
         },
       });
+
+    /*
+     * Punch-out must use the location category saved at punch-in.
+     * A Hybrid employee cannot punch in at OFFICE and then choose HOME/FIELD
+     * on punch-out to bypass the office geofence.
+     */
+    const workLocation =
+      action === "PUNCH_OUT" &&
+      existing?.workLocation
+        ? clean(
+            existing.workLocation
+          ).toUpperCase() as AttendanceLocation
+        : requestedResolvedLocation.location;
+
+    let attendanceOffice =
+      assignedOffice;
+
+    if (
+      action === "PUNCH_OUT" &&
+      workLocation === "OFFICE" &&
+      existing?.officeId &&
+      existing.officeId !== assignedOffice?.id
+    ) {
+      attendanceOffice =
+        await prisma.office.findFirst({
+          where: {
+            id: existing.officeId,
+            userId,
+          },
+          select: {
+            id: true,
+            code: true,
+            name: true,
+            latitude: true,
+            longitude: true,
+            radiusMeters: true,
+            isHeadOffice: true,
+            isActive: true,
+          },
+        });
+    }
+
+    const effectiveOfficeRadiusMeters =
+      Number(
+        attendanceOffice?.radiusMeters ??
+        officeRadiusMeters
+      );
 
     const ip =
       getRequestIp(
@@ -724,13 +1297,211 @@ export async function POST(
         "user-agent"
       );
 
+    /*
+     * OFFICE staff are always GPS secured,
+     * even if an old settings record has GPS disabled.
+     */
+    const officeMode =
+      workLocation ===
+      "OFFICE";
+
+    const gpsRequired =
+      officeMode ||
+      Boolean(
+        setting?.gpsAttendanceEnabled
+      );
+
+    if (
+      gpsRequired &&
+      (
+        latitude === null ||
+        longitude === null
+      )
+    ) {
+      return NextResponse.json(
+        {
+          success:
+            false,
+
+          message:
+            "GPS location is required before attendance can be recorded.",
+        },
+        {
+          status:
+            400,
+        }
+      );
+    }
+
+    /*
+     * OFFICE punches must use the Staff member's assigned Office.
+     * Fail closed if the Staff member has no active office assignment
+     * or that Office has no GPS coordinates.
+     */
+    if (
+      officeMode &&
+      !attendanceOffice
+    ) {
+      return NextResponse.json(
+        {
+          success:
+            false,
+
+          message:
+            "No active office is assigned to your Staff profile. Please contact your administrator.",
+        },
+        {
+          status:
+            400,
+        }
+      );
+    }
+
+    const officeLatitude =
+      numberOrNull(
+        attendanceOffice?.latitude
+      );
+
+    const officeLongitude =
+      numberOrNull(
+        attendanceOffice?.longitude
+      );
+
+    if (
+      officeMode &&
+      (
+        officeLatitude ===
+          null ||
+        officeLongitude ===
+          null
+      )
+    ) {
+      return NextResponse.json(
+        {
+          success:
+            false,
+
+          message:
+            "GPS location is not configured for your assigned office. Please contact your administrator.",
+        },
+        {
+          status:
+            400,
+        }
+      );
+    }
+
     const verification =
-      getGpsVerification({
+      verifyGps({
         latitude,
         longitude,
         accuracy,
-        setting,
+        officeLatitude,
+        officeLongitude,
+        officeRadiusMeters: effectiveOfficeRadiusMeters,
+        maxGpsAccuracyMeters,
       });
+
+    /*
+     * OFFICE staff: GPS accuracy <= 100 metres.
+     */
+    if (
+      officeMode &&
+      !verification.accuracyPassed
+    ) {
+      return NextResponse.json(
+        {
+          success:
+            false,
+
+          message:
+            `GPS accuracy must be within ${maxGpsAccuracyMeters} metres. Please move to an open area, refresh GPS and try again.`,
+        },
+        {
+          status:
+            400,
+        }
+      );
+    }
+
+    /*
+     * OFFICE staff: physical distance <= 100 metres.
+     */
+    if (
+      officeMode &&
+      !verification.geofencePassed
+    ) {
+      const distanceText =
+        verification.distance !==
+        null
+          ? ` You are approximately ${verification.distance} metres away from the registered office.`
+          : "";
+
+      return NextResponse.json(
+        {
+          success:
+            false,
+
+          message:
+            `Attendance is blocked outside the ${effectiveOfficeRadiusMeters} metre radius of ${attendanceOffice?.name || "your assigned office"}.${distanceText}`,
+        },
+        {
+          status:
+            403,
+        }
+      );
+    }
+
+    /*
+     * IP is automatically captured.
+     * If policy says IP is compulsory and proxy does not provide it,
+     * fail safely.
+     */
+    if (
+      action ===
+        "PUNCH_IN" &&
+      setting?.requireCheckInIp &&
+      !ip
+    ) {
+      return NextResponse.json(
+        {
+          success:
+            false,
+
+          message:
+            "Unable to identify your check-in IP address. Please retry or contact the administrator.",
+        },
+        {
+          status:
+            400,
+        }
+      );
+    }
+
+    if (
+      action ===
+        "PUNCH_OUT" &&
+      setting?.requireCheckOutIp &&
+      !ip
+    ) {
+      return NextResponse.json(
+        {
+          success:
+            false,
+
+          message:
+            "Unable to identify your check-out IP address. Please retry or contact the administrator.",
+        },
+        {
+          status:
+            400,
+        }
+      );
+    }
+
+    /* ---------------------------------------------------------------------- */
+    /* PUNCH IN                                                               */
+    /* ---------------------------------------------------------------------- */
 
     if (
       action ===
@@ -741,12 +1512,15 @@ export async function POST(
       ) {
         return NextResponse.json(
           {
-            success: false,
+            success:
+              false,
+
             message:
               "You have already punched in today.",
           },
           {
-            status: 409,
+            status:
+              409,
           }
         );
       }
@@ -757,88 +1531,15 @@ export async function POST(
       ) {
         return NextResponse.json(
           {
-            success: false,
+            success:
+              false,
+
             message:
               "Check-in selfie is required.",
           },
           {
-            status: 400,
-          }
-        );
-      }
-
-      if (
-        setting?.requireCheckInIp &&
-        !ip
-      ) {
-        return NextResponse.json(
-          {
-            success: false,
-            message:
-              "Unable to verify check-in IP address.",
-          },
-          {
-            status: 400,
-          }
-        );
-      }
-
-      if (
-        setting?.gpsAttendanceEnabled &&
-        setting?.requireGpsForCheckIn &&
-        (
-          latitude ===
-            null ||
-          longitude ===
-            null
-        )
-      ) {
-        return NextResponse.json(
-          {
-            success: false,
-            message:
-              "GPS location is required for check-in.",
-          },
-          {
-            status: 400,
-          }
-        );
-      }
-
-      if (
-        setting?.gpsAttendanceEnabled &&
-        setting?.requireGpsForCheckIn &&
-        verification.accuracyPassed ===
-          false
-      ) {
-        return NextResponse.json(
-          {
-            success: false,
-            message:
-              "GPS accuracy is too low. Please move to an open area and try again.",
-          },
-          {
-            status: 400,
-          }
-        );
-      }
-
-      if (
-        setting?.gpsAttendanceEnabled &&
-        setting?.requireGpsForCheckIn &&
-        workLocation ===
-          "OFFICE" &&
-        verification.geofencePassed ===
-          false
-      ) {
-        return NextResponse.json(
-          {
-            success: false,
-            message:
-              "You are outside the allowed office attendance radius.",
-          },
-          {
-            status: 400,
+            status:
+              400,
           }
         );
       }
@@ -846,7 +1547,8 @@ export async function POST(
       const officeStart =
         minutesFromTime(
           setting?.officeStartTime
-        ) ?? 570;
+        ) ??
+        570;
 
       const grace =
         Number(
@@ -879,95 +1581,144 @@ export async function POST(
                 id:
                   existing.id,
               },
+
               data: {
+                officeId:
+                  officeMode
+                    ? attendanceOffice?.id || null
+                    : existing.officeId,
+
                 checkIn:
                   now,
+
                 status:
                   status as any,
+
                 lateMinutes,
+
                 workLocation:
                   workLocation as any,
 
                 checkInIp:
                   ip,
+
                 checkInPhotoUrl:
                   photoUrl,
+
                 checkInSource:
                   "WEB",
+
                 checkInUserAgent:
                   userAgent,
 
                 checkInLatitude:
                   latitude,
+
                 checkInLongitude:
                   longitude,
+
                 checkInAccuracyMeters:
                   accuracy,
+
                 checkInDistanceMeters:
-                  verification.distance,
+                  officeMode
+                    ? verification.distance
+                    : null,
+
                 checkInGeofencePassed:
-                  verification.geofencePassed,
+                  officeMode
+                    ? verification.geofencePassed
+                    : null,
               },
             })
           : await prisma.staffAttendance.create({
               data: {
                 userId,
                 staffId,
+
+                officeId:
+                  officeMode
+                    ? attendanceOffice?.id || null
+                    : null,
+
                 date:
                   start,
+
                 checkIn:
                   now,
+
                 status:
                   status as any,
+
                 lateMinutes,
+
                 workLocation:
                   workLocation as any,
 
                 checkInIp:
                   ip,
+
                 checkInPhotoUrl:
                   photoUrl,
+
                 checkInSource:
                   "WEB",
+
                 checkInUserAgent:
                   userAgent,
 
                 checkInLatitude:
                   latitude,
+
                 checkInLongitude:
                   longitude,
+
                 checkInAccuracyMeters:
                   accuracy,
+
                 checkInDistanceMeters:
-                  verification.distance,
+                  officeMode
+                    ? verification.distance
+                    : null,
+
                 checkInGeofencePassed:
-                  verification.geofencePassed,
+                  officeMode
+                    ? verification.geofencePassed
+                    : null,
               },
             });
 
       return NextResponse.json({
-        success: true,
+        success:
+          true,
+
         message:
           lateMinutes > 0
             ? `Punch-in recorded. You are ${lateMinutes} minute(s) late.`
             : "Punch-in recorded successfully.",
+
         attendance,
       });
     }
 
-    /* PUNCH OUT */
+    /* ---------------------------------------------------------------------- */
+    /* PUNCH OUT                                                              */
+    /* ---------------------------------------------------------------------- */
 
     if (
       !existing?.checkIn
     ) {
       return NextResponse.json(
         {
-          success: false,
+          success:
+            false,
+
           message:
             "Please punch in before punching out.",
         },
         {
-          status: 400,
+          status:
+            400,
         }
       );
     }
@@ -977,12 +1728,15 @@ export async function POST(
     ) {
       return NextResponse.json(
         {
-          success: false,
+          success:
+            false,
+
           message:
             "You have already punched out today.",
         },
         {
-          status: 409,
+          status:
+            409,
         }
       );
     }
@@ -993,88 +1747,15 @@ export async function POST(
     ) {
       return NextResponse.json(
         {
-          success: false,
+          success:
+            false,
+
           message:
             "Check-out selfie is required.",
         },
         {
-          status: 400,
-        }
-      );
-    }
-
-    if (
-      setting?.requireCheckOutIp &&
-      !ip
-    ) {
-      return NextResponse.json(
-        {
-          success: false,
-          message:
-            "Unable to verify check-out IP address.",
-        },
-        {
-          status: 400,
-        }
-      );
-    }
-
-    if (
-      setting?.gpsAttendanceEnabled &&
-      setting?.requireGpsForCheckOut &&
-      (
-        latitude ===
-          null ||
-        longitude ===
-          null
-      )
-    ) {
-      return NextResponse.json(
-        {
-          success: false,
-          message:
-            "GPS location is required for check-out.",
-        },
-        {
-          status: 400,
-        }
-      );
-    }
-
-    if (
-      setting?.gpsAttendanceEnabled &&
-      setting?.requireGpsForCheckOut &&
-      verification.accuracyPassed ===
-        false
-    ) {
-      return NextResponse.json(
-        {
-          success: false,
-          message:
-            "GPS accuracy is too low. Please try again.",
-        },
-        {
-          status: 400,
-        }
-      );
-    }
-
-    if (
-      setting?.gpsAttendanceEnabled &&
-      setting?.requireGpsForCheckOut &&
-      workLocation ===
-        "OFFICE" &&
-      verification.geofencePassed ===
-        false
-    ) {
-      return NextResponse.json(
-        {
-          success: false,
-          message:
-            "You are outside the allowed office attendance radius.",
-        },
-        {
-          status: 400,
+          status:
+            400,
         }
       );
     }
@@ -1121,41 +1802,63 @@ export async function POST(
           id:
             existing.id,
         },
+
         data: {
           checkOut:
             now,
+
           workingMinutes,
+
           status:
             finalStatus,
+
+          /*
+           * Keep the same work location used on punch-in.
+           * Staff cannot change the attendance category during punch-out.
+           */
           workLocation:
-            workLocation as any,
+            existing.workLocation,
 
           checkOutIp:
             ip,
+
           checkOutPhotoUrl:
             photoUrl,
+
           checkOutSource:
             "WEB",
+
           checkOutUserAgent:
             userAgent,
 
           checkOutLatitude:
             latitude,
+
           checkOutLongitude:
             longitude,
+
           checkOutAccuracyMeters:
             accuracy,
+
           checkOutDistanceMeters:
-            verification.distance,
+            officeMode
+              ? verification.distance
+              : null,
+
           checkOutGeofencePassed:
-            verification.geofencePassed,
+            officeMode
+              ? verification.geofencePassed
+              : null,
         },
       });
 
     return NextResponse.json({
-      success: true,
+      success:
+        true,
+
       message:
         "Punch-out recorded successfully.",
+
       attendance,
     });
   } catch (error) {
@@ -1166,14 +1869,17 @@ export async function POST(
 
     return NextResponse.json(
       {
-        success: false,
+        success:
+          false,
+
         message:
           error instanceof Error
             ? error.message
             : "Unable to save attendance.",
       },
       {
-        status: 500,
+        status:
+          500,
       }
     );
   }

@@ -3156,6 +3156,7 @@ link
 );
 }
 
+
 function dataUrlToFile(
 dataUrl:
 string,
@@ -3422,6 +3423,7 @@ throw new Error(
 }
 
 /* Browser / desktop fallback */
+
 const file =
 dataUrlToFile(
 image,
@@ -3479,6 +3481,7 @@ false,
 
 console.warn(
 "BROWSER SHARE FAILED:",
+
 error
 );
 }
@@ -3487,6 +3490,7 @@ error
 downloadPosterWeb(
 image,
 fileName
+
 );
 
 openWhatsAppFallback(
@@ -3825,6 +3829,7 @@ return;
 const fileName =
 safePosterFileName(
 poster.title
+
 );
 
 const androidBridge =
@@ -3839,6 +3844,7 @@ dataUrlBase64(
 image
 ),
 fileName
+
 );
 
 ensureNativeBridgeSuccess(
@@ -3927,6 +3933,7 @@ const fileName =
 safePosterFileName(
 uploadedPosterTitle ||
 "My Poster"
+
 );
 
 const androidBridge =
@@ -3941,6 +3948,7 @@ dataUrlBase64(
 image
 ),
 fileName
+
 );
 
 ensureNativeBridgeSuccess(
