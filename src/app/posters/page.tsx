@@ -1,6 +1,9 @@
 "use client";
 
 import Link from "next/link";
+import { Capacitor } from "@capacitor/core";
+import { Directory, Filesystem } from "@capacitor/filesystem";
+import { Share } from "@capacitor/share";
 import {
 ChangeEvent,
 useCallback,
@@ -551,6 +554,24 @@ null
 const [
 preparingOwnPoster,
 setPreparingOwnPoster,
+] =
+useState(
+false
+);
+
+const [
+sharingPosterId,
+setSharingPosterId,
+] =
+useState<
+string | null
+>(
+null
+);
+
+const [
+sharingOwnPoster,
+setSharingOwnPoster,
 ] =
 useState(
 false
@@ -2985,6 +3006,653 @@ return null;
 }
 
 /* ------------------------------------------------------------------------ */
+/* SHARE HELPERS */
+/* ------------------------------------------------------------------------ */
+
+type AgentsIndiaNativeBridge = {
+isAvailable?: () => boolean;
+saveImage?: (
+base64Data: string,
+fileName: string
+) => string;
+shareImage?: (
+base64Data: string,
+fileName: string,
+text: string
+) => string;
+};
+
+function getAgentsIndiaNativeBridge():
+AgentsIndiaNativeBridge | null {
+if (
+typeof window ===
+"undefined"
+) {
+return null;
+}
+
+const nativeWindow =
+window as Window & {
+AgentsIndiaNative?:
+AgentsIndiaNativeBridge;
+};
+
+return (
+nativeWindow.AgentsIndiaNative ||
+null
+);
+}
+
+function ensureNativeBridgeSuccess(
+result:
+string | undefined,
+
+action:
+string
+) {
+const value =
+String(
+result ||
+""
+);
+
+if (
+value.startsWith(
+"ERROR:"
+)
+) {
+throw new Error(
+value.slice(
+6
+).trim() ||
+`Unable to ${action}.`
+);
+}
+}
+
+function isNativeApp() {
+return Capacitor.isNativePlatform();
+}
+
+function dataUrlBase64(
+dataUrl:
+string
+) {
+const commaIndex =
+dataUrl.indexOf(
+","
+);
+
+if (
+commaIndex <
+0
+) {
+throw new Error(
+"Unable to prepare poster image."
+);
+}
+
+return dataUrl.slice(
+commaIndex +
+1
+);
+}
+
+async function savePosterNative(
+image:
+string,
+
+fileName:
+string,
+
+directory:
+Directory
+) {
+const result =
+await Filesystem.writeFile({
+path:
+`AgentsIndia/${fileName}`,
+
+data:
+dataUrlBase64(
+image
+),
+
+directory,
+
+recursive:
+true,
+});
+
+return result.uri;
+}
+
+function downloadPosterWeb(
+image:
+string,
+
+fileName:
+string
+) {
+const link =
+document.createElement(
+"a"
+);
+
+link.href =
+image;
+
+link.download =
+fileName;
+
+document.body.appendChild(
+link
+);
+
+link.click();
+
+document.body.removeChild(
+link
+);
+}
+
+function dataUrlToFile(
+dataUrl:
+string,
+
+fileName:
+string
+) {
+const parts =
+dataUrl.split(
+","
+);
+
+if (
+parts.length <
+2
+) {
+throw new Error(
+"Unable to prepare poster file."
+);
+}
+
+const header =
+parts[0];
+
+const data =
+parts
+.slice(
+1
+)
+.join(
+","
+);
+
+const mimeMatch =
+/data:([^;]+);base64/i.exec(
+header
+);
+
+const mimeType =
+mimeMatch?.[1] ||
+"image/png";
+
+const binary =
+window.atob(
+data
+);
+
+const bytes =
+new Uint8Array(
+binary.length
+);
+
+for (
+let index =
+0;
+index <
+binary.length;
+index +=
+1
+) {
+bytes[
+index
+] =
+binary.charCodeAt(
+index
+);
+}
+
+return new File(
+[
+bytes,
+],
+fileName,
+{
+type:
+mimeType,
+}
+);
+}
+
+function safePosterFileName(
+title:
+string
+) {
+const safeName =
+title
+.replace(
+/[^a-z0-9]/gi,
+"-"
+)
+.replace(
+/-+/g,
+"-"
+)
+.replace(
+/^-|-$/g,
+""
+)
+.toLowerCase();
+
+return `${
+safeName ||
+"insurance-poster"
+}-personalized.png`;
+}
+
+function openWhatsAppFallback(
+posterTitle:
+string
+) {
+const text =
+`Hi, please see this insurance poster: ${posterTitle}`;
+
+const whatsappUrl =
+`https://wa.me/?text=${encodeURIComponent(
+text
+)}`;
+
+const link =
+document.createElement(
+"a"
+);
+
+link.href =
+whatsappUrl;
+
+link.target =
+"_blank";
+
+link.rel =
+"noopener noreferrer";
+
+document.body.appendChild(
+link
+);
+
+link.click();
+
+document.body.removeChild(
+link
+);
+}
+
+async function sharePosterFile({
+image,
+title,
+}: {
+image:
+string;
+
+title:
+string;
+}) {
+const fileName =
+safePosterFileName(
+title
+);
+
+/*
+ * Agents India Android native bridge:
+ * The Android app loads https://agentsindia.org remotely. On some Android
+ * WebView/Capacitor combinations the normal Capacitor bridge can be reported
+ * as web even though the app itself is native. Our small app-specific bridge
+ * is therefore tried first for image sharing.
+ */
+const androidBridge =
+getAgentsIndiaNativeBridge();
+
+if (
+androidBridge?.shareImage
+) {
+const result =
+androidBridge.shareImage(
+dataUrlBase64(
+image
+),
+fileName,
+`Insurance poster: ${title}`
+);
+
+ensureNativeBridgeSuccess(
+result,
+"share the poster image"
+);
+
+return {
+shared:
+true,
+
+usedFallback:
+false,
+};
+}
+
+/*
+ * Capacitor Android/iOS:
+ * write the generated PNG to the native cache and hand the actual file
+ * URI to the operating-system share sheet. WhatsApp therefore receives
+ * the image attachment, not only the poster title/text.
+ */
+if (
+isNativeApp()
+) {
+try {
+const uri =
+await savePosterNative(
+image,
+fileName,
+Directory.Cache
+);
+
+await Share.share({
+title,
+text:
+`Insurance poster: ${title}`,
+files: [
+uri,
+],
+dialogTitle:
+"Share personalized poster",
+});
+
+return {
+shared:
+true,
+
+usedFallback:
+false,
+};
+} catch (
+error
+) {
+const message =
+error instanceof Error
+? error.message
+: String(
+error ||
+""
+);
+
+if (
+/cancel|dismiss/i.test(
+message
+)
+) {
+return {
+shared:
+false,
+
+usedFallback:
+false,
+};
+}
+
+console.error(
+"CAPACITOR SHARE FAILED:",
+error
+);
+
+throw new Error(
+"Unable to share the poster image from this device."
+);
+}
+}
+
+/* Browser / desktop fallback */
+const file =
+dataUrlToFile(
+image,
+fileName
+);
+
+const shareData = {
+title,
+text:
+`Insurance poster: ${title}`,
+files: [
+file,
+],
+};
+
+if (
+navigator.share &&
+(
+!navigator.canShare ||
+navigator.canShare({
+files: [
+file,
+],
+})
+)
+) {
+try {
+await navigator.share(
+shareData
+);
+
+return {
+shared:
+true,
+
+usedFallback:
+false,
+};
+} catch (
+error
+) {
+if (
+error instanceof DOMException &&
+error.name ===
+"AbortError"
+) {
+return {
+shared:
+false,
+
+usedFallback:
+false,
+};
+}
+
+console.warn(
+"BROWSER SHARE FAILED:",
+error
+);
+}
+}
+
+downloadPosterWeb(
+image,
+fileName
+);
+
+openWhatsAppFallback(
+title
+);
+
+return {
+shared:
+false,
+
+usedFallback:
+true,
+};
+}
+
+/* ------------------------------------------------------------------------ */
+/* SHARE LIBRARY POSTER */
+/* ------------------------------------------------------------------------ */
+
+async function sharePoster(
+poster:
+Poster
+) {
+try {
+setSharingPosterId(
+poster.id
+);
+
+const company:
+| Company
+| null =
+poster.company
+? {
+id:
+poster.company
+.id ||
+"",
+
+name:
+poster.company
+.name ||
+"",
+
+logoUrl:
+poster.company
+.logoUrl ||
+null,
+}
+: getGeneralPosterCompany(
+poster.id
+);
+
+const image =
+await createPersonalizedPoster(
+poster.fileUrl,
+company
+);
+
+if (
+!image
+) {
+window.alert(
+"Unable to prepare poster for sharing."
+);
+
+return;
+}
+
+const result =
+await sharePosterFile({
+image,
+title:
+poster.title,
+});
+
+if (
+result.usedFallback
+) {
+setMessage(
+"✅ Personalized poster downloaded. WhatsApp opened — attach the downloaded poster and send."
+);
+}
+} catch (
+error
+) {
+console.error(
+"SHARE POSTER ERROR:",
+error
+);
+
+window.alert(
+"Unable to share poster."
+);
+} finally {
+setSharingPosterId(
+null
+);
+}
+}
+
+/* ------------------------------------------------------------------------ */
+/* SHARE OWN POSTER */
+/* ------------------------------------------------------------------------ */
+
+async function shareOwnPoster() {
+if (
+!uploadedPosterUrl
+) {
+return;
+}
+
+try {
+setSharingOwnPoster(
+true
+);
+
+const image =
+await createPersonalizedPoster(
+uploadedPosterUrl,
+uploadedPosterCompany
+);
+
+if (
+!image
+) {
+window.alert(
+"Unable to prepare your poster for sharing."
+);
+
+return;
+}
+
+const result =
+await sharePosterFile({
+image,
+title:
+uploadedPosterTitle ||
+"My Insurance Poster",
+});
+
+if (
+result.usedFallback
+) {
+setMessage(
+"✅ Personalized poster downloaded. WhatsApp opened — attach the downloaded poster and send."
+);
+}
+} catch (
+error
+) {
+console.error(
+"SHARE OWN POSTER ERROR:",
+error
+);
+
+window.alert(
+"Unable to share your poster."
+);
+} finally {
+setSharingOwnPoster(
+false
+);
+}
+}
+
+/* ------------------------------------------------------------------------ */
 /* RECORD DOWNLOAD */
 /* ------------------------------------------------------------------------ */
 
@@ -3154,45 +3822,51 @@ window.alert(
 return;
 }
 
-const safeName =
+const fileName =
+safePosterFileName(
 poster.title
-.replace(
-/[^a-z0-9]/gi,
-"-"
-)
-.replace(
-/-+/g,
-"-"
-)
-.replace(
-/^-|-$/g,
-""
-)
-.toLowerCase();
-
-const link =
-document.createElement(
-"a"
 );
 
-link.href =
-image;
+const androidBridge =
+getAgentsIndiaNativeBridge();
 
-link.download =
-`${
-safeName ||
-"poster"
-}-personalized.png`;
-
-document.body.appendChild(
-link
+if (
+androidBridge?.saveImage
+) {
+const result =
+androidBridge.saveImage(
+dataUrlBase64(
+image
+),
+fileName
 );
 
-link.click();
-
-document.body.removeChild(
-link
+ensureNativeBridgeSuccess(
+result,
+"save the poster"
 );
+
+setMessage(
+`✅ Personalized poster saved to Pictures/AgentsIndia/${fileName}`
+);
+} else if (
+isNativeApp()
+) {
+await savePosterNative(
+image,
+fileName,
+Directory.Documents
+);
+
+setMessage(
+`✅ Personalized poster saved to Documents/AgentsIndia/${fileName}`
+);
+} else {
+downloadPosterWeb(
+image,
+fileName
+);
+}
 
 await recordDownload(
 poster.id
@@ -3206,7 +3880,9 @@ error
 );
 
 window.alert(
-"Unable to download poster."
+error instanceof Error
+? error.message
+: "Unable to download poster."
 );
 } finally {
 setPreparingPosterId(
@@ -3247,45 +3923,56 @@ window.alert(
 return;
 }
 
-const safeName =
-uploadedPosterTitle
-.replace(
-/[^a-z0-9]/gi,
-"-"
-)
-.replace(
-/-+/g,
-"-"
-)
-.replace(
-/^-|-$/g,
-""
-)
-.toLowerCase();
-
-const link =
-document.createElement(
-"a"
+const fileName =
+safePosterFileName(
+uploadedPosterTitle ||
+"My Poster"
 );
 
-link.href =
-image;
+const androidBridge =
+getAgentsIndiaNativeBridge();
 
-link.download =
-`${
-safeName ||
-"my-poster"
-}-personalized.png`;
-
-document.body.appendChild(
-link
+if (
+androidBridge?.saveImage
+) {
+const result =
+androidBridge.saveImage(
+dataUrlBase64(
+image
+),
+fileName
 );
 
-link.click();
-
-document.body.removeChild(
-link
+ensureNativeBridgeSuccess(
+result,
+"save your poster"
 );
+
+setMessage(
+`✅ Personalized poster saved to Pictures/AgentsIndia/${fileName}. You can upload another poster now.`
+);
+} else if (
+isNativeApp()
+) {
+await savePosterNative(
+image,
+fileName,
+Directory.Documents
+);
+
+setMessage(
+`✅ Personalized poster saved to Documents/AgentsIndia/${fileName}. You can upload another poster now.`
+);
+} else {
+downloadPosterWeb(
+image,
+fileName
+);
+
+setMessage(
+"✅ Personalized poster downloaded. You can upload another poster now."
+);
+}
 
 setUploadedPosterUrl(
 null
@@ -3298,16 +3985,18 @@ setUploadedPosterTitle(
 setUploadedPosterCompanyId(
 "GENERAL"
 );
-
-setMessage(
-"✅ Personalized poster downloaded. You can upload another poster now."
-);
 } catch (
 error
 ) {
 console.error(
 "DOWNLOAD OWN POSTER ERROR:",
 error
+);
+
+window.alert(
+error instanceof Error
+? error.message
+: "Unable to download your poster."
 );
 } finally {
 setPreparingOwnPoster(
@@ -4018,11 +4707,13 @@ className="flex-1 rounded-xl bg-blue-700 px-5 py-3.5 font-black text-white shado
 </button>
 
 {!isAdmin && (
+<>
 <button
 type="button"
 disabled={
 !uploadedPosterUrl ||
-preparingOwnPoster
+preparingOwnPoster ||
+sharingOwnPoster
 }
 onClick={() =>
 void downloadOwnPoster()
@@ -4033,6 +4724,24 @@ className="flex-1 rounded-xl bg-emerald-700 px-5 py-3.5 font-black text-white sh
 ? "Preparing..."
 : "⬇ Download My Personalized Poster"}
 </button>
+
+<button
+type="button"
+disabled={
+!uploadedPosterUrl ||
+preparingOwnPoster ||
+sharingOwnPoster
+}
+onClick={() =>
+void shareOwnPoster()
+}
+className="flex-1 rounded-xl bg-green-600 px-5 py-3.5 font-black text-white shadow-md hover:bg-green-700 disabled:cursor-not-allowed disabled:bg-slate-300"
+>
+{sharingOwnPoster
+? "Preparing Share..."
+: "🟢 Share on WhatsApp"}
+</button>
+</>
 )}
 
 </div>
@@ -4869,7 +5578,7 @@ metric.userRating
 className={`mt-4 grid gap-2 ${
 isAdmin
 ? "grid-cols-2"
-: "grid-cols-1"
+: "grid-cols-2"
 }`}
 >
 
@@ -4877,6 +5586,8 @@ isAdmin
 type="button"
 disabled={
 preparingPosterId ===
+poster.id ||
+sharingPosterId ===
 poster.id
 }
 onClick={() =>
@@ -4891,6 +5602,29 @@ poster.id
 ? "Preparing..."
 : "⬇ Download"}
 </button>
+
+{!isAdmin && (
+<button
+type="button"
+disabled={
+preparingPosterId ===
+poster.id ||
+sharingPosterId ===
+poster.id
+}
+onClick={() =>
+void sharePoster(
+poster
+)
+}
+className="rounded-xl bg-green-600 py-3 font-black text-white hover:bg-green-700 disabled:bg-slate-400"
+>
+{sharingPosterId ===
+poster.id
+? "Preparing..."
+: "🟢 WhatsApp"}
+</button>
+)}
 
 {isAdmin && (
 <button
