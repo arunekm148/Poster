@@ -11,6 +11,8 @@ import {
 import {
   useRouter,
 } from "next/navigation";
+import { Capacitor } from "@capacitor/core";
+import { Geolocation } from "@capacitor/geolocation";
 
 /* -------------------------------------------------------------------------- */
 /* TYPES                                                                      */
@@ -584,6 +586,14 @@ export default function MyAttendancePage() {
       false
     );
 
+  const [
+    verificationStarting,
+    setVerificationStarting,
+  ] =
+    useState(
+      false
+    );
+
   /* ------------------------------------------------------------------------ */
   /* LOAD                                                                     */
   /* ------------------------------------------------------------------------ */
@@ -807,17 +817,7 @@ export default function MyAttendancePage() {
   /* LOCATION                                                                 */
   /* ------------------------------------------------------------------------ */
 
-  function captureLocation() {
-    if (
-      !navigator.geolocation
-    ) {
-      setError(
-        "GPS is not supported by this device/browser."
-      );
-
-      return;
-    }
-
+  async function getCurrentLocation() {
     setLocationLoading(
       true
     );
@@ -826,15 +826,37 @@ export default function MyAttendancePage() {
       ""
     );
 
-    setLocation(
-      null
-    );
+    try {
+      if (
+        Capacitor.isNativePlatform()
+      ) {
+        const permission =
+          await Geolocation.requestPermissions();
 
-    navigator.geolocation.getCurrentPosition(
-      (
-        position
-      ) => {
-        setLocation({
+        if (
+          permission.location !==
+            "granted" &&
+          permission.coarseLocation !==
+            "granted"
+        ) {
+          throw new Error(
+            "Location permission is required for attendance."
+          );
+        }
+
+        const position =
+          await Geolocation.getCurrentPosition({
+            enableHighAccuracy:
+              true,
+
+            timeout:
+              20000,
+
+            maximumAge:
+              0,
+          });
+
+        const nextLocation = {
           latitude:
             position.coords.latitude,
 
@@ -843,37 +865,137 @@ export default function MyAttendancePage() {
 
           accuracy:
             position.coords.accuracy,
-        });
+        };
 
-        setLocationLoading(
-          false
-        );
-      },
-
-      (
-        locationError
-      ) => {
-        setError(
-          locationError.message ||
-            "Unable to read GPS location."
+        setLocation(
+          nextLocation
         );
 
-        setLocationLoading(
-          false
-        );
-      },
-
-      {
-        enableHighAccuracy:
-          true,
-
-        timeout:
-          20000,
-
-        maximumAge:
-          0,
+        return nextLocation;
       }
+
+      if (
+        !navigator.geolocation
+      ) {
+        throw new Error(
+          "GPS is not supported by this device/browser."
+        );
+      }
+
+      const position =
+        await new Promise<GeolocationPosition>(
+          (
+            resolve,
+            reject
+          ) => {
+            navigator.geolocation.getCurrentPosition(
+              resolve,
+              reject,
+              {
+                enableHighAccuracy:
+                  true,
+
+                timeout:
+                  20000,
+
+                maximumAge:
+                  0,
+              }
+            );
+          }
+        );
+
+      const nextLocation = {
+        latitude:
+          position.coords.latitude,
+
+        longitude:
+          position.coords.longitude,
+
+        accuracy:
+          position.coords.accuracy,
+      };
+
+      setLocation(
+        nextLocation
+      );
+
+      return nextLocation;
+    } catch (
+      locationError
+    ) {
+      setLocation(
+        null
+      );
+
+      throw new Error(
+        locationError instanceof Error
+          ? locationError.message
+          : "Unable to read GPS location."
+      );
+    } finally {
+      setLocationLoading(
+        false
+      );
+    }
+  }
+
+  async function startGpsAndCamera() {
+    if (
+      verificationStarting ||
+      cameraStarting
+    ) {
+      return;
+    }
+
+    setVerificationStarting(
+      true
     );
+
+    setError(
+      ""
+    );
+
+    setMessage(
+      ""
+    );
+
+    try {
+      const results =
+        await Promise.allSettled([
+          getCurrentLocation(),
+          openCamera(),
+        ]);
+
+      const rejected =
+        results.find(
+          (
+            result
+          ) =>
+            result.status ===
+            "rejected"
+        );
+
+      if (
+        rejected &&
+        rejected.status ===
+          "rejected"
+      ) {
+        throw rejected.reason;
+      }
+    } catch (
+      verifyError
+    ) {
+      setError(
+        verifyError instanceof Error
+          ? verifyError.message
+          : "Unable to start GPS and camera verification."
+      );
+    } finally {
+      setVerificationStarting(
+        false
+      );
+    }
   }
 
   /* ------------------------------------------------------------------------ */
@@ -2018,7 +2140,7 @@ export default function MyAttendancePage() {
                         </div>
                       )}
 
-                      <div className="grid gap-3 md:grid-cols-3">
+                      <div className="grid gap-3 md:grid-cols-[1fr_2fr]">
 
                         <label>
 
@@ -2069,74 +2191,61 @@ export default function MyAttendancePage() {
                         <div>
 
                           <span className="mb-1 block text-xs font-black text-slate-600">
-                            GPS
-                          </span>
-
-                          <button
-                            type="button"
-                            onClick={
-                              captureLocation
-                            }
-                            disabled={
-                              locationLoading
-                            }
-                            className="w-full rounded-xl border border-blue-200 bg-blue-50 px-3 py-2.5 text-sm font-black text-blue-700 disabled:opacity-50"
-                          >
-                            {locationLoading
-                              ? "Getting Location..."
-                              : location
-                                ? `✓ GPS ${Math.round(
-                                    location.accuracy
-                                  )}m`
-                                : "📍 Capture GPS"}
-                          </button>
-
-                          {location && (
-                            <p
-                              className={`mt-1 text-[11px] font-black ${
-                                location.accuracy <=
-                                Number(
-                                  data?.setting
-                                    ?.maxGpsAccuracyMeters ||
-                                  100
-                                )
-                                  ? "text-emerald-700"
-                                  : "text-red-700"
-                              }`}
-                            >
-                              Accuracy:{" "}
-                              {Math.round(
-                                location.accuracy
-                              )}{" "}
-                              metres
-                            </p>
-                          )}
-
-                        </div>
-
-                        <div>
-
-                          <span className="mb-1 block text-xs font-black text-slate-600">
-                            Selfie
+                            Attendance Verification
                           </span>
 
                           <button
                             type="button"
                             onClick={() =>
-                              void openCamera()
+                              void startGpsAndCamera()
                             }
                             disabled={
+                              verificationStarting ||
+                              locationLoading ||
                               cameraStarting ||
                               photoUploading
                             }
-                            className="w-full rounded-xl border border-violet-200 bg-violet-50 px-3 py-2.5 text-sm font-black text-violet-700 disabled:opacity-50"
+                            className="w-full rounded-xl bg-gradient-to-r from-blue-700 to-violet-700 px-4 py-3 text-sm font-black text-white shadow-sm disabled:opacity-50"
                           >
-                            {photoUploading
-                              ? "Uploading..."
-                              : photoUrl
-                                ? "✓ Selfie Ready"
-                                : "📸 Open Camera"}
+                            {verificationStarting ||
+                            locationLoading ||
+                            cameraStarting
+                              ? "Starting GPS + Camera..."
+                              : location &&
+                                  photoUrl
+                                ? "✓ GPS + Selfie Ready"
+                                : "📍📸 Start GPS + Camera"}
                           </button>
+
+                          <div className="mt-2 flex flex-wrap gap-2 text-[11px] font-black">
+
+                            <span
+                              className={`rounded-full px-2.5 py-1 ${
+                                location
+                                  ? "bg-emerald-50 text-emerald-700"
+                                  : "bg-slate-100 text-slate-500"
+                              }`}
+                            >
+                              {location
+                                ? `GPS ${Math.round(
+                                    location.accuracy
+                                  )}m`
+                                : "GPS waiting"}
+                            </span>
+
+                            <span
+                              className={`rounded-full px-2.5 py-1 ${
+                                photoUrl
+                                  ? "bg-emerald-50 text-emerald-700"
+                                  : "bg-slate-100 text-slate-500"
+                              }`}
+                            >
+                              {photoUrl
+                                ? "Selfie ready"
+                                : "Selfie waiting"}
+                            </span>
+
+                          </div>
 
                         </div>
 
