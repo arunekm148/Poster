@@ -105,6 +105,95 @@ function optionalText(
   return text || null;
 }
 
+type PolicyDocumentInput = {
+  type:
+    | "OLD_POLICY"
+    | "OTHER";
+  fileName: string;
+  fileUrl: string;
+  fileType: string | null;
+};
+
+function normalizePolicyDocuments(
+  value: unknown
+): PolicyDocumentInput[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value
+    .map((item) => {
+      if (
+        !item ||
+        typeof item !==
+          "object"
+      ) {
+        return null;
+      }
+
+      const record =
+        item as Record<
+          string,
+          unknown
+        >;
+
+      const rawType =
+        String(
+          record.type || ""
+        )
+          .trim()
+          .toUpperCase();
+
+      if (
+        rawType !==
+          "OLD_POLICY" &&
+        rawType !==
+          "OTHER"
+      ) {
+        return null;
+      }
+
+      const fileUrl =
+        String(
+          record.fileUrl ||
+            record.url ||
+            ""
+        ).trim();
+
+      if (!fileUrl) {
+        return null;
+      }
+
+      const fileName =
+        String(
+          record.fileName ||
+            "Document"
+        ).trim() ||
+        "Document";
+
+      const fileType =
+        optionalText(
+          record.fileType
+        );
+
+      return {
+        type:
+          rawType as
+            | "OLD_POLICY"
+            | "OTHER",
+        fileName,
+        fileUrl,
+        fileType,
+      };
+    })
+    .filter(
+      (
+        item
+      ): item is PolicyDocumentInput =>
+        Boolean(item)
+    );
+}
+
 function addMonthsSafe(
   sourceDate: Date,
   months: number
@@ -367,6 +456,13 @@ export async function GET(
                 phone: true,
                 whatsapp: true,
                 email: true,
+              },
+            },
+
+            documents: {
+              orderBy: {
+                createdAt:
+                  "asc",
               },
             },
 
@@ -640,6 +736,13 @@ export async function GET(
             },
           },
 
+          documents: {
+            orderBy: {
+              createdAt:
+                "asc",
+            },
+          },
+
           installments: {
             orderBy: {
               installmentNumber:
@@ -738,6 +841,50 @@ export async function POST(
       optionalText(
         body.policyPdfUrl
       );
+
+    const rawDocuments =
+      Array.isArray(
+        body.documents
+      )
+        ? body.documents
+        : [];
+
+    if (
+      rawDocuments.length >
+      40
+    ) {
+      return NextResponse.json(
+        {
+          success: false,
+          message:
+            "A maximum of 40 additional policy documents can be attached.",
+        },
+        {
+          status: 400,
+        }
+      );
+    }
+
+    const policyDocuments =
+      normalizePolicyDocuments(
+        rawDocuments
+      );
+
+    if (
+      policyDocuments.length !==
+      rawDocuments.length
+    ) {
+      return NextResponse.json(
+        {
+          success: false,
+          message:
+            "One or more policy documents are invalid.",
+        },
+        {
+          status: 400,
+        }
+      );
+    }
 
     const rawPolicyType =
       String(
@@ -2011,6 +2158,15 @@ export async function POST(
 
       policyPdfUrl,
 
+      documents:
+        policyDocuments.length >
+        0
+          ? {
+              create:
+                policyDocuments,
+            }
+          : undefined,
+
       notes,
 
       isActive: true,
@@ -2073,6 +2229,13 @@ export async function POST(
 
                     consultant:
                       true,
+
+                    documents: {
+                      orderBy: {
+                        createdAt:
+                          "asc",
+                      },
+                    },
 
                     installments:
                       true,
@@ -2166,6 +2329,13 @@ export async function POST(
 
             consultant:
               true,
+
+            documents: {
+              orderBy: {
+                createdAt:
+                  "asc",
+              },
+            },
 
             installments:
               true,
@@ -2439,6 +2609,13 @@ export async function POST(
 
                 consultant:
                   true,
+
+                documents: {
+                  orderBy: {
+                    createdAt:
+                      "asc",
+                  },
+                },
 
                 installments: {
                   orderBy: {

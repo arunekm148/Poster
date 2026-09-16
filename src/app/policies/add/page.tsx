@@ -45,6 +45,17 @@ type PaymentType =
 | "FULL"
 | "EMI";
 
+type PolicyDocumentType =
+| "OLD_POLICY"
+| "OTHER";
+
+type UploadedPolicyDocument = {
+type: PolicyDocumentType;
+fileName: string;
+fileUrl: string;
+fileType?: string | null;
+};
+
 type PolicyTenure =
 | "MANUAL"
 | "1M"
@@ -1118,6 +1129,25 @@ setPolicyPdfUrl,
 const [
 uploadingPdf,
 setUploadingPdf,
+] = useState(false);
+
+/* ------------------------------------------------------------------------ */
+/* OPTIONAL MULTIPLE DOCUMENTS */
+/* ------------------------------------------------------------------------ */
+
+const [
+oldPolicyFiles,
+setOldPolicyFiles,
+] = useState<File[]>([]);
+
+const [
+otherDocumentFiles,
+setOtherDocumentFiles,
+] = useState<File[]>([]);
+
+const [
+uploadingDocuments,
+setUploadingDocuments,
 ] = useState(false);
 
 /* ------------------------------------------------------------------------ */
@@ -2978,6 +3008,321 @@ false
 }
 
 /* ------------------------------------------------------------------------ */
+/* OPTIONAL MULTIPLE DOCUMENTS */
+/* ------------------------------------------------------------------------ */
+
+function validateOptionalDocumentFile(
+file: File
+): string {
+const allowedTypes = [
+"application/pdf",
+"image/jpeg",
+"image/jpg",
+"image/png",
+"image/webp",
+];
+
+const lowerName =
+file.name
+.toLowerCase();
+
+const allowedByName =
+lowerName.endsWith(".pdf") ||
+lowerName.endsWith(".jpg") ||
+lowerName.endsWith(".jpeg") ||
+lowerName.endsWith(".png") ||
+lowerName.endsWith(".webp");
+
+if (
+!allowedTypes.includes(
+file.type
+) &&
+!allowedByName
+) {
+return `${file.name}: only PDF, JPG, JPEG, PNG or WEBP files are allowed.`;
+}
+
+if (
+file.size >
+10 *
+1024 *
+1024
+) {
+return `${file.name}: file size must be below 10 MB.`;
+}
+
+return "";
+}
+
+function addOptionalFiles(
+event:
+ChangeEvent<HTMLInputElement>,
+type:
+PolicyDocumentType
+) {
+setError("");
+
+const selected =
+Array.from(
+event.target.files ||
+[]
+);
+
+if (
+selected.length ===
+0
+) {
+return;
+}
+
+for (
+const file of selected
+) {
+const validationError =
+validateOptionalDocumentFile(
+file
+);
+
+if (
+validationError
+) {
+setError(
+validationError
+);
+
+event.target.value =
+"";
+
+return;
+}
+}
+
+const addUniqueFiles = (
+current: File[]
+) => {
+const map =
+new Map<
+string,
+File
+>();
+
+for (
+const file of current
+) {
+map.set(
+`${file.name}-${file.size}-${file.lastModified}`,
+file
+);
+}
+
+for (
+const file of selected
+) {
+map.set(
+`${file.name}-${file.size}-${file.lastModified}`,
+file
+);
+}
+
+return Array.from(
+map.values()
+).slice(
+0,
+20
+);
+};
+
+if (
+type ===
+"OLD_POLICY"
+) {
+setOldPolicyFiles(
+previous =>
+addUniqueFiles(
+previous
+)
+);
+} else {
+setOtherDocumentFiles(
+previous =>
+addUniqueFiles(
+previous
+)
+);
+}
+
+event.target.value =
+"";
+}
+
+function removeOptionalFile(
+type:
+PolicyDocumentType,
+index: number
+) {
+if (
+type ===
+"OLD_POLICY"
+) {
+setOldPolicyFiles(
+previous =>
+previous.filter(
+(
+_,
+fileIndex
+) =>
+fileIndex !==
+index
+)
+);
+
+return;
+}
+
+setOtherDocumentFiles(
+previous =>
+previous.filter(
+(
+_,
+fileIndex
+) =>
+fileIndex !==
+index
+)
+);
+}
+
+async function uploadOptionalDocument(
+file: File,
+type:
+PolicyDocumentType
+): Promise<UploadedPolicyDocument> {
+const formData =
+new FormData();
+
+formData.append(
+"file",
+file
+);
+
+formData.append(
+"type",
+"policy"
+);
+
+const response =
+await fetch(
+"/api/upload",
+{
+method:
+"POST",
+body:
+formData,
+}
+);
+
+const data =
+await response
+.json()
+.catch(
+() => ({})
+);
+
+if (
+!response.ok ||
+!data.success
+) {
+throw new Error(
+data.message ||
+`Unable to upload ${file.name}.`
+);
+}
+
+const fileUrl =
+String(
+data.fileUrl ||
+data.url ||
+""
+).trim();
+
+if (
+!fileUrl
+) {
+throw new Error(
+`${file.name} uploaded but file URL was not returned.`
+);
+}
+
+return {
+type,
+fileName:
+String(
+data.fileName ||
+file.name
+),
+fileUrl,
+fileType:
+data.fileType ||
+null,
+};
+}
+
+async function uploadOptionalDocuments(): Promise<
+UploadedPolicyDocument[]
+> {
+const queue = [
+...oldPolicyFiles.map(
+file => ({
+file,
+type:
+"OLD_POLICY" as const,
+})
+),
+...otherDocumentFiles.map(
+file => ({
+file,
+type:
+"OTHER" as const,
+})
+),
+];
+
+if (
+queue.length ===
+0
+) {
+return [];
+}
+
+try {
+setUploadingDocuments(
+true
+);
+
+const uploaded:
+UploadedPolicyDocument[] =
+[];
+
+for (
+const item of queue
+) {
+uploaded.push(
+await uploadOptionalDocument(
+item.file,
+item.type
+)
+);
+}
+
+return uploaded;
+} finally {
+setUploadingDocuments(
+false
+);
+}
+}
+
+/* ------------------------------------------------------------------------ */
 /* VALIDATION */
 /* ------------------------------------------------------------------------ */
 
@@ -3345,7 +3690,8 @@ event.preventDefault();
 
 if (
 saving ||
-uploadingPdf
+uploadingPdf ||
+uploadingDocuments
 ) {
 return;
 }
@@ -3388,6 +3734,9 @@ policyPdf &&
 uploadedPdfUrl =
 await uploadPolicyPdf();
 }
+
+const uploadedDocuments =
+await uploadOptionalDocuments();
 
 const payload = {
 userId,
@@ -3611,6 +3960,9 @@ expiryDate,
 policyPdfUrl:
 uploadedPdfUrl ||
 null,
+
+documents:
+uploadedDocuments,
 
 paymentType,
 
@@ -5582,6 +5934,204 @@ PDF only • Maximum 10 MB
 
 </section>
 
+{/* OPTIONAL MULTIPLE DOCUMENTS */}
+
+<section className={sectionClass}>
+
+<h2 className="text-lg font-black text-slate-900">
+🗂️ Additional Documents
+</h2>
+
+<p className="mt-1 text-xs font-semibold text-slate-500">
+All documents below are optional. You can select multiple PDF or image files.
+</p>
+
+<div className="mt-6 space-y-6">
+
+<div>
+<div className="flex items-center justify-between gap-3">
+<div>
+<h3 className="font-black text-slate-900">
+Old Policy Copy
+</h3>
+<p className="mt-1 text-xs text-slate-500">
+Optional • Multiple files allowed
+</p>
+</div>
+
+{oldPolicyFiles.length > 0 && (
+<span className="rounded-full bg-blue-50 px-3 py-1 text-xs font-black text-blue-700">
+{oldPolicyFiles.length} selected
+</span>
+)}
+</div>
+
+<label className="mt-3 block cursor-pointer rounded-2xl border-2 border-dashed border-blue-200 bg-blue-50/40 p-5 text-center transition hover:border-blue-400 hover:bg-blue-50">
+<input
+type="file"
+multiple
+accept="application/pdf,.pdf,image/jpeg,.jpg,.jpeg,image/png,.png,image/webp,.webp"
+onChange={event =>
+addOptionalFiles(
+event,
+"OLD_POLICY"
+)
+}
+className="hidden"
+/>
+
+<div className="text-2xl">
+📎
+</div>
+
+<p className="mt-2 font-bold text-slate-800">
+Choose Old Policy Copies
+</p>
+
+<p className="mt-1 text-xs text-slate-500">
+PDF / JPG / JPEG / PNG / WEBP • Max 10 MB each
+</p>
+</label>
+
+{oldPolicyFiles.length > 0 && (
+<div className="mt-3 space-y-2">
+{oldPolicyFiles.map(
+(
+file,
+index
+) => (
+<div
+key={`${file.name}-${file.size}-${file.lastModified}`}
+className="flex items-center justify-between gap-3 rounded-xl border border-slate-200 bg-slate-50 p-3"
+>
+<div className="min-w-0">
+<p className="truncate text-sm font-bold text-slate-800">
+📄 {file.name}
+</p>
+<p className="mt-1 text-xs text-slate-500">
+{(
+file.size /
+1024 /
+1024
+).toFixed(
+2
+)} MB
+</p>
+</div>
+
+<button
+type="button"
+onClick={() =>
+removeOptionalFile(
+"OLD_POLICY",
+index
+)
+}
+className="shrink-0 rounded-lg border border-red-200 bg-white px-3 py-2 text-xs font-black text-red-600"
+>
+Remove
+</button>
+</div>
+)
+)}
+</div>
+)}
+</div>
+
+<div className="border-t border-slate-200 pt-6">
+<div className="flex items-center justify-between gap-3">
+<div>
+<h3 className="font-black text-slate-900">
+Other Documents
+</h3>
+<p className="mt-1 text-xs text-slate-500">
+RC, ID proof, proposal, medical report or any supporting document • Optional
+</p>
+</div>
+
+{otherDocumentFiles.length > 0 && (
+<span className="rounded-full bg-violet-50 px-3 py-1 text-xs font-black text-violet-700">
+{otherDocumentFiles.length} selected
+</span>
+)}
+</div>
+
+<label className="mt-3 block cursor-pointer rounded-2xl border-2 border-dashed border-violet-200 bg-violet-50/40 p-5 text-center transition hover:border-violet-400 hover:bg-violet-50">
+<input
+type="file"
+multiple
+accept="application/pdf,.pdf,image/jpeg,.jpg,.jpeg,image/png,.png,image/webp,.webp"
+onChange={event =>
+addOptionalFiles(
+event,
+"OTHER"
+)
+}
+className="hidden"
+/>
+
+<div className="text-2xl">
+📚
+</div>
+
+<p className="mt-2 font-bold text-slate-800">
+Choose Other Documents
+</p>
+
+<p className="mt-1 text-xs text-slate-500">
+Multiple files • Maximum 10 MB each
+</p>
+</label>
+
+{otherDocumentFiles.length > 0 && (
+<div className="mt-3 space-y-2">
+{otherDocumentFiles.map(
+(
+file,
+index
+) => (
+<div
+key={`${file.name}-${file.size}-${file.lastModified}`}
+className="flex items-center justify-between gap-3 rounded-xl border border-slate-200 bg-slate-50 p-3"
+>
+<div className="min-w-0">
+<p className="truncate text-sm font-bold text-slate-800">
+📄 {file.name}
+</p>
+<p className="mt-1 text-xs text-slate-500">
+{(
+file.size /
+1024 /
+1024
+).toFixed(
+2
+)} MB
+</p>
+</div>
+
+<button
+type="button"
+onClick={() =>
+removeOptionalFile(
+"OTHER",
+index
+)
+}
+className="shrink-0 rounded-lg border border-red-200 bg-white px-3 py-2 text-xs font-black text-red-600"
+>
+Remove
+</button>
+</div>
+)
+)}
+</div>
+)}
+</div>
+
+</div>
+
+</section>
+
 {/* PAYMENT */}
 
 <section className={sectionClass}>
@@ -5872,6 +6422,7 @@ type="submit"
 disabled={
 saving ||
 uploadingPdf ||
+uploadingDocuments ||
 loadingPreviousPolicy ||
 loadingSelectedCustomer ||
 loadingCompanies
@@ -5879,7 +6430,9 @@ loadingCompanies
 className="rounded-2xl bg-gradient-to-r from-blue-600 via-indigo-600 to-violet-600 px-8 py-3.5 font-black text-white shadow-lg disabled:cursor-not-allowed disabled:opacity-50"
 >
 {uploadingPdf
-? "Uploading PDF..."
+? "Uploading Policy PDF..."
+: uploadingDocuments
+? "Uploading Documents..."
 : saving
 ? isRenewal
 ? "Saving Renewal..."

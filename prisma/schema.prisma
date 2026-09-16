@@ -442,6 +442,7 @@ model Policy {
   originSupervisorId        String?
   emiFollowUps              EmiFollowUp[]
   installments              EmiInstallment[]
+  documents                 PolicyDocument[]
   company                   Company?              @relation(fields: [companyId], references: [id])
   consultant                Consultant?           @relation(fields: [consultantId], references: [id])
   customer                  Customer              @relation(fields: [customerId], references: [id])
@@ -482,6 +483,22 @@ model Policy {
   @@index([userId, isActive])
   @@index([userId, isActive, expiryDate])
   @@index([userId, customerId, isActive])
+}
+
+model PolicyDocument {
+  id        String             @id @default(cuid())
+  policyId  String
+  type      PolicyDocumentType
+  fileName  String
+  fileUrl   String
+  fileType  String?
+  createdAt DateTime           @default(now())
+
+  policy Policy @relation(fields: [policyId], references: [id], onDelete: Cascade)
+
+  @@index([policyId])
+  @@index([policyId, type])
+  @@index([createdAt])
 }
 
 model RenewalFollowUp {
@@ -1370,6 +1387,11 @@ enum MediaApprovalStatus {
 enum PolicyPaymentType {
   FULL
   EMI
+}
+
+enum PolicyDocumentType {
+  OLD_POLICY
+  OTHER
 }
 
 enum EmiStatus {
