@@ -24,7 +24,10 @@ type AccountMode =
 
 type LoginUser = {
 id?: string;
+userId?: string;
+staffId?: string | null;
 role?: string;
+accountType?: "USER" | "STAFF";
 accountMode?: AccountMode;
 };
 
@@ -190,6 +193,16 @@ setUserRole,
 ] = useState("");
 
 const [
+staffId,
+setStaffId,
+] = useState("");
+
+const [
+accountType,
+setAccountType,
+] = useState<"USER" | "STAFF">("USER");
+
+const [
 accountMode,
 setAccountMode,
 ] =
@@ -203,14 +216,21 @@ setAccountModeLoading,
 ] = useState(true);
 
 /*
-* Lite = Self customers only
-* Classic = Self customers only
-* Pro = Self + Sub-Agent customers
+* Main User / Agent:
+* - Lite / Classic = Self customers only
+* - Pro = Self + Sub-Agent customers
+* - Admin = all options
 *
-* Master Admin can see all options.
+* Staff / Supervisor:
+* - Self + only Sub-Agents assigned to the logged-in Staff member.
 */
 
+const isStaffLogin =
+accountType === "STAFF" &&
+Boolean(staffId);
+
 const canUseSubAgents =
+isStaffLogin ||
 userRole === "ADMIN" ||
 accountMode ===
 "SELF_STAFF_SUBAGENT";
@@ -526,6 +546,13 @@ localStorage.getItem(
 let currentRole =
 "";
 
+let currentStaffId =
+"";
+
+let currentAccountType:
+"USER" | "STAFF" =
+"USER";
+
 let storedMode:
 AccountMode | undefined =
 undefined;
@@ -543,21 +570,69 @@ JSON.parse(
 storedUser
 );
 
-if (parsed?.id) {
-if (!savedUserId) {
-savedUserId =
-String(parsed.id);
-
-localStorage.setItem(
-"userId",
-savedUserId
-);
-}
-
 currentRole =
 String(
 parsed.role || ""
 ).toUpperCase();
+
+currentAccountType =
+parsed.accountType ===
+"STAFF"
+? "STAFF"
+: "USER";
+
+currentStaffId =
+String(
+parsed.staffId || ""
+).trim();
+
+/*
+* For a Staff login:
+* parsed.id      = Staff ID
+* parsed.staffId = Staff ID
+* parsed.userId  = owning Agent / Business ID
+*
+* Customer and Sub-Agent APIs must use the owning Agent ID.
+*/
+if (
+currentAccountType ===
+"STAFF"
+) {
+const ownerUserId =
+String(
+parsed.userId || ""
+).trim();
+
+if (ownerUserId) {
+savedUserId =
+ownerUserId;
+
+localStorage.setItem(
+"userId",
+ownerUserId
+);
+}
+} else {
+const mainUserId =
+String(
+parsed.userId ||
+parsed.id ||
+""
+).trim();
+
+if (
+mainUserId &&
+!savedUserId
+) {
+savedUserId =
+mainUserId;
+
+localStorage.setItem(
+"userId",
+mainUserId
+);
+}
+}
 
 if (
 parsed.accountMode ===
@@ -569,7 +644,6 @@ parsed.accountMode ===
 ) {
 storedMode =
 parsed.accountMode;
-}
 }
 } catch (
 loginError
@@ -599,6 +673,14 @@ savedUserId
 
 setUserRole(
 currentRole
+);
+
+setStaffId(
+currentStaffId
+);
+
+setAccountType(
+currentAccountType
 );
 
 void loadAccountMode(
@@ -642,7 +724,7 @@ canUseSubAgents,
 ]);
 
 /* ------------------------------------------------------------------------ */
-/* LOAD SUB AGENTS ONLY FOR PRO */
+/* LOAD SUB AGENTS                                                           */
 /* ------------------------------------------------------------------------ */
 
 useEffect(() => {
@@ -660,11 +742,23 @@ setSubAgents([]);
 return;
 }
 
+/*
+* Staff login:
+* load only Sub-Agents assigned to this Staff member.
+*
+* Main Agent/Admin/Pro:
+* load the Agent's allowed Sub-Agent list.
+*/
 void loadSubAgents(
-userId
+userId,
+isStaffLogin
+? staffId
+: ""
 );
 }, [
 userId,
+staffId,
+isStaffLogin,
 accountModeLoading,
 canUseSubAgents,
 ]);
@@ -731,7 +825,8 @@ subAgents,
 /* ------------------------------------------------------------------------ */
 
 async function loadSubAgents(
-currentUserId: string
+currentUserId: string,
+currentStaffId = ""
 ) {
 if (
 !canUseSubAgents
@@ -745,11 +840,18 @@ setSubAgentsLoading(
 true
 );
 
+const assignedStaffQuery =
+currentStaffId
+? `&assignedStaffId=${encodeURIComponent(
+currentStaffId
+)}`
+: "";
+
 const response =
 await fetch(
 `/api/sub-agents?userId=${encodeURIComponent(
 currentUserId
-)}&activeOnly=true`,
+)}&activeOnly=true${assignedStaffQuery}`,
 {
 cache:
 "no-store",
@@ -1633,6 +1735,7 @@ Add Customer
 </div>
 
 {!accountModeLoading &&
+!isStaffLogin &&
 userRole !== "ADMIN" && (
 <div className="rounded-xl border border-blue-200 bg-blue-50 px-3 py-2 text-right">
 
@@ -1656,6 +1759,14 @@ Enter customer details below.
 </p>
 
 {!accountModeLoading &&
+isStaffLogin && (
+<div className="mt-4 rounded-xl border border-violet-200 bg-violet-50 p-3 text-sm font-bold text-violet-800">
+👥 Staff access: you can add a Self / Direct customer or select from the Sub-Agents assigned to you.
+</div>
+)}
+
+{!accountModeLoading &&
+!isStaffLogin &&
 !canUseSubAgents &&
 userRole !== "ADMIN" && (
 <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm font-bold text-slate-700">
@@ -1893,7 +2004,9 @@ className="absolute right-3 top-1/2 -translate-y-1/2 rounded-lg px-2 py-1 text-l
 </div>
 
 <p className="mt-2 text-xs font-semibold text-gray-500">
-🔎 Search by Sub-Agent ID, name, mobile or email.
+{isStaffLogin
+? "🔎 Only Sub-Agents assigned to your Staff account are shown."
+: "🔎 Search by Sub-Agent ID, name, mobile or email."}
 </p>
 
 {selectedSubAgent && (
@@ -1987,7 +2100,9 @@ Select
 ) : (
 <div className="p-5 text-center">
 <p className="font-black text-gray-900">
-No matching Sub-Agent
+{isStaffLogin
+? "No Sub-Agent is currently assigned to this Staff account."
+: "No matching Sub-Agent"}
 </p>
 </div>
 )}
