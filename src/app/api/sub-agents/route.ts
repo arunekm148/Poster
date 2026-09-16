@@ -4,6 +4,7 @@ import {
 } from "next/server";
 
 import prisma from "@/lib/prisma";
+import { getSessionFromRequest } from "@/lib/session";
 
 /* -------------------------------------------------------------------------- */
 /* HELPERS                                                                    */
@@ -862,10 +863,118 @@ export async function POST(
     const body =
       await request.json();
 
-    const userId =
+    /* ---------------------------------------------------------------------- */
+    /* LOGIN / CREATOR CONTEXT                                                */
+    /* ---------------------------------------------------------------------- */
+
+    const session =
+      getSessionFromRequest(
+        request
+      );
+
+    const requestedUserId =
       String(
         body.userId || ""
       ).trim();
+
+    /*
+     * IMPORTANT:
+     * - Main User / Agent creation stays under the Agent.
+     * - Staff/Supervisor creation is automatically assigned to that Staff.
+     * - When a secure session exists, session.userId is authoritative.
+     */
+    const userId =
+      String(
+        session?.userId ||
+          requestedUserId ||
+          ""
+      ).trim();
+
+    let assignedStaffId =
+      cleanId(
+        body.assignedStaffId
+      );
+
+    let changedByType:
+      | "AGENT"
+      | "STAFF"
+      | "SUPERVISOR"
+      | "ADMIN" =
+      "AGENT";
+
+    let changedByUserId:
+      string | null =
+      userId || null;
+
+    let changedByStaffId:
+      string | null =
+      null;
+
+    let changedByName =
+      "Agent";
+
+    const isStaffCreator =
+      Boolean(
+        session &&
+          session.accountType ===
+            "STAFF" &&
+          session.staffId
+      );
+
+    if (
+      session &&
+      session.accountType ===
+        "STAFF" &&
+      session.staffId
+    ) {
+      /*
+       * Staff-created Sub-Agent must always belong to the logged-in Staff.
+       * Ignore any assignedStaffId sent by the browser so Staff cannot assign
+       * a newly-created Sub-Agent to another Staff member.
+       */
+      assignedStaffId =
+        session.staffId;
+
+      changedByType =
+        String(
+          session.role || ""
+        ).toUpperCase() ===
+        "SUPERVISOR"
+          ? "SUPERVISOR"
+          : "STAFF";
+
+      changedByUserId =
+        null;
+
+      changedByStaffId =
+        session.staffId;
+
+      changedByName =
+        String(
+          session.name ||
+            "Staff"
+        );
+    } else if (session) {
+      changedByType =
+        String(
+          session.role || ""
+        ).toUpperCase() ===
+        "ADMIN"
+          ? "ADMIN"
+          : "AGENT";
+
+      changedByUserId =
+        session.userId;
+
+      changedByStaffId =
+        null;
+
+      changedByName =
+        String(
+          session.name ||
+            "Agent"
+        );
+    }
 
     const name =
       String(
@@ -926,11 +1035,6 @@ export async function POST(
         body.notes
       );
 
-    const assignedStaffId =
-      cleanId(
-        body.assignedStaffId
-      );
-
     /* ---------------------------------------------------------------------- */
     /* MAIN AGENT REQUIRED                                                    */
     /* ---------------------------------------------------------------------- */
@@ -959,6 +1063,11 @@ export async function POST(
 
     const mainAgent =
       userCheck.user;
+
+    if (!session) {
+      changedByName =
+        mainAgent.name;
+    }
 
     /* ---------------------------------------------------------------------- */
     /* VALIDATION                                                             */
@@ -1104,6 +1213,26 @@ export async function POST(
             staffCheck.staff.staffRole
           ),
       };
+
+      /*
+       * Extra protection: a Staff session may only auto-assign to itself.
+       */
+      if (
+        isStaffCreator &&
+        assignedStaff.id !==
+          session?.staffId
+      ) {
+        return NextResponse.json(
+          {
+            success: false,
+            message:
+              "Staff can only create a Sub-Agent under their own Staff account.",
+          },
+          {
+            status: 403,
+          }
+        );
+      }
     }
 
     /* ---------------------------------------------------------------------- */
@@ -1241,13 +1370,10 @@ export async function POST(
             });
 
           /*
-           * Only create an assignment-history row when the
-           * Sub-Agent is initially assigned to Staff.
-           *
-           * Agent Direct is the default relationship and does
-           * not require an artificial transfer record.
+           * Every initial Staff assignment is recorded permanently.
+           * Staff-created Sub-Agents are automatically assigned to the
+           * logged-in Staff member and are recorded as STAFF/SUPERVISOR.
            */
-
           if (
             assignedStaffId &&
             assignedStaff
@@ -1266,20 +1392,18 @@ export async function POST(
                 toStaffId:
                   assignedStaffId,
 
-                changedByType:
-                  "AGENT",
+                changedByType,
 
-                changedByUserId:
-                  userId,
+                changedByUserId,
 
-                changedByStaffId:
-                  null,
+                changedByStaffId,
 
-                changedByName:
-                  mainAgent.name,
+                changedByName,
 
                 reason:
-                  `Initial assignment to ${assignedStaff.staffCode} - ${assignedStaff.name}`,
+                  isStaffCreator
+                    ? `Created directly by ${assignedStaff.staffCode} - ${assignedStaff.name} and automatically assigned to the same Staff account`
+                    : `Initial assignment to ${assignedStaff.staffCode} - ${assignedStaff.name}`,
               },
             });
           }
@@ -1293,7 +1417,10 @@ export async function POST(
         success: true,
 
         message:
+          isStaffCreator &&
           assignedStaff
+            ? `Sub-Agent ${code} created and automatically assigned to your Staff account.`
+            : assignedStaff
             ? `Sub-Agent ${code} created and assigned to ${assignedStaff.name}.`
             : `Sub-Agent ${code} created successfully.`,
 
