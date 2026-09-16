@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import {
 FormEvent,
@@ -41,6 +41,7 @@ insurerName?: string | null;
 productName?: string | null;
 policyType?: string | null;
 
+subAgentId?: string | null;
 premium?: number | string | null;
 customerPremium?: number | string | null;
 sumInsured?: number | string | null;
@@ -550,6 +551,11 @@ searchParams.get(
 "customerId"
 ) || "";
 
+const selectedSubAgentId =
+searchParams.get(
+"subAgentId"
+) || "";
+
 const returnTo =
 searchParams.get(
 "returnTo"
@@ -1037,6 +1043,13 @@ policy.customerId ===
 selectedCustomerId
 )
 
+.filter(
+(policy) =>
+!selectedSubAgentId ||
+policy.subAgentId ===
+selectedSubAgentId
+)
+
 .map(
 (policy) => ({
 policy,
@@ -1090,6 +1103,7 @@ b.days ??
 }, [
 policies,
 selectedCustomerId,
+selectedSubAgentId,
 ]);
 
 /* ------------------------------------------------------------------------ */
@@ -1273,12 +1287,19 @@ renewalFilter ===
 return "Overdue";
 }
 
+if (
+selectedSubAgentId
+) {
+return "Sub-Agent Renewals";
+}
+
 return selectedCustomerId
 ? "Customer Renewal Follow-up"
 : "All Renewals";
 }, [
 renewalFilter,
 selectedCustomerId,
+selectedSubAgentId,
 ]);
 
 /* ------------------------------------------------------------------------ */
@@ -1688,6 +1709,15 @@ className="inline-flex rounded-xl bg-gray-800 px-4 py-2.5 text-sm font-semibold 
 >
 ← Back to Customers
 </Link>
+) : selectedSubAgentId ? (
+<Link
+href={`/sub-agents/${encodeURIComponent(
+selectedSubAgentId
+)}`}
+className="inline-flex rounded-xl bg-gray-800 px-4 py-2.5 text-sm font-semibold text-white shadow-sm"
+>
+← Sub-Agent Summary
+</Link>
 ) : (
 <Link
 href="/dashboard"
@@ -1728,12 +1758,16 @@ Renewal Management
 <h1 className="mt-1 text-2xl font-black text-gray-900">
 {selectedCustomerId
 ? "Renewal Follow-up"
+: selectedSubAgentId
+? "Sub-Agent Renewals"
 : "Renewals"}
 </h1>
 
 <p className="mt-1 text-sm font-semibold text-gray-500">
 {selectedCustomerId
 ? "Review the customer's policy and record the renewal follow-up."
+: selectedSubAgentId
+? "Renewals and follow-ups for the selected Sub-Agent."
 : "Track upcoming policy renewals and customer follow-ups."}
 </p>
 
@@ -1744,6 +1778,16 @@ href={
 selectedCustomerId
 ? `/policies/add?customerId=${encodeURIComponent(
 selectedCustomerId
+)}${
+selectedSubAgentId
+? `&subAgentId=${encodeURIComponent(
+selectedSubAgentId
+)}`
+: ""
+}`
+: selectedSubAgentId
+? `/policies/add?subAgentId=${encodeURIComponent(
+selectedSubAgentId
 )}`
 : "/policies/add"
 }
@@ -2797,3 +2841,4 @@ return (
 </div>
 );
 }
+

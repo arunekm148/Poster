@@ -3322,6 +3322,67 @@ false
 }
 }
 
+function openSelectedFile(
+file: File
+) {
+const url =
+URL.createObjectURL(
+file
+);
+
+window.open(
+url,
+"_blank",
+"noopener,noreferrer"
+);
+
+window.setTimeout(
+() => {
+URL.revokeObjectURL(
+url
+);
+},
+60000
+);
+}
+
+function downloadSelectedFile(
+file: File
+) {
+const url =
+URL.createObjectURL(
+file
+);
+
+const anchor =
+document.createElement(
+"a"
+);
+
+anchor.href =
+url;
+
+anchor.download =
+file.name;
+
+document.body.appendChild(
+anchor
+);
+
+anchor.click();
+
+anchor.remove();
+
+window.setTimeout(
+() => {
+URL.revokeObjectURL(
+url
+);
+},
+1000
+);
+}
+
 /* ------------------------------------------------------------------------ */
 /* VALIDATION */
 /* ------------------------------------------------------------------------ */
@@ -6019,6 +6080,31 @@ file.size /
 </p>
 </div>
 
+<div className="flex shrink-0 flex-wrap gap-2">
+<button
+type="button"
+onClick={() =>
+openSelectedFile(
+file
+)
+}
+className="rounded-lg bg-blue-600 px-3 py-2 text-xs font-black text-white"
+>
+👁 View
+</button>
+
+<button
+type="button"
+onClick={() =>
+downloadSelectedFile(
+file
+)
+}
+className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-black text-emerald-700"
+>
+⬇ Download
+</button>
+
 <button
 type="button"
 onClick={() =>
@@ -6027,10 +6113,11 @@ removeOptionalFile(
 index
 )
 }
-className="shrink-0 rounded-lg border border-red-200 bg-white px-3 py-2 text-xs font-black text-red-600"
+className="rounded-lg border border-red-200 bg-white px-3 py-2 text-xs font-black text-red-600"
 >
 Remove
 </button>
+</div>
 </div>
 )
 )}
@@ -6109,6 +6196,31 @@ file.size /
 </p>
 </div>
 
+<div className="flex shrink-0 flex-wrap gap-2">
+<button
+type="button"
+onClick={() =>
+openSelectedFile(
+file
+)
+}
+className="rounded-lg bg-blue-600 px-3 py-2 text-xs font-black text-white"
+>
+👁 View
+</button>
+
+<button
+type="button"
+onClick={() =>
+downloadSelectedFile(
+file
+)
+}
+className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-black text-emerald-700"
+>
+⬇ Download
+</button>
+
 <button
 type="button"
 onClick={() =>
@@ -6117,10 +6229,11 @@ removeOptionalFile(
 index
 )
 }
-className="shrink-0 rounded-lg border border-red-200 bg-white px-3 py-2 text-xs font-black text-red-600"
+className="rounded-lg border border-red-200 bg-white px-3 py-2 text-xs font-black text-red-600"
 >
 Remove
 </button>
+</div>
 </div>
 )
 )}

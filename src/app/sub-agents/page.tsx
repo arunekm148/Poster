@@ -15,10 +15,15 @@ import { useRouter } from "next/navigation";
 
 type AgentUser = {
   id?: string;
+  userId?: string;
+  staffId?: string | null;
   name?: string;
   phone?: string;
   email?: string | null;
   role?: string;
+  accountType?: "USER" | "STAFF";
+  staffRole?: string | null;
+  staffCode?: string | null;
 };
 
 type Staff = {
@@ -70,6 +75,44 @@ type AssignmentHistory = {
   } | null;
 };
 
+type SubAgentBusinessSummary = {
+  totalPolicies: number;
+  activePolicies: number;
+  totalPremium: number;
+  activePremium: number;
+
+  totalCustomers: number;
+  activeCustomers: number;
+
+  newBusinessThisMonthCount: number;
+  newBusinessThisMonthPremium: number;
+
+  newBusinessFyCount: number;
+  newBusinessFyPremium: number;
+
+  renewedThisMonthCount: number;
+  renewedThisMonthPremium: number;
+
+  renewalDue7Count: number;
+  renewalDue30Count: number;
+  renewalDue30Premium: number;
+
+  expiredCount: number;
+
+  portfolio: {
+    motor: number;
+    health: number;
+    life: number;
+    other: number;
+  };
+
+  lastPolicyDate?: string | null;
+  lastCustomerDate?: string | null;
+  lastActivityDate?: string | null;
+
+  financialYear?: string | null;
+};
+
 type SubAgent = {
   id: string;
   userId?: string;
@@ -116,6 +159,9 @@ type SubAgent = {
     customers?: number;
     policies?: number;
   };
+
+  businessSummary?:
+    SubAgentBusinessSummary | null;
 };
 
 type FilterType =
@@ -231,6 +277,34 @@ function formatDateTime(
   );
 }
 
+function formatMoney(
+  value?:
+    | number
+    | string
+    | null
+) {
+  const amount =
+    Number(
+      value || 0
+    );
+
+  if (
+    !Number.isFinite(
+      amount
+    )
+  ) {
+    return "₹0";
+  }
+
+  return `₹${amount.toLocaleString(
+    "en-IN",
+    {
+      maximumFractionDigits:
+        2,
+    }
+  )}`;
+}
+
 function staffLabel(
   staff?: {
     staffCode?: string | null;
@@ -247,6 +321,35 @@ function staffLabel(
   ]
     .filter(Boolean)
     .join(" - ");
+}
+
+function isStaffLogin(
+  user?: AgentUser | null
+) {
+  const accountType =
+    String(
+      user?.accountType ||
+        ""
+    )
+      .trim()
+      .toUpperCase();
+
+  const role =
+    String(
+      user?.role ||
+        user?.staffRole ||
+        ""
+    )
+      .trim()
+      .toUpperCase();
+
+  return (
+    accountType ===
+      "STAFF" ||
+    role === "STAFF" ||
+    role ===
+      "SUPERVISOR"
+  );
 }
 
 /* -------------------------------------------------------------------------- */
@@ -374,17 +477,30 @@ export default function SubAgentsPage() {
   const loadSubAgents =
     useCallback(
       async (
-        userId: string
+        userId: string,
+        assignedStaffId = ""
       ) => {
         try {
           setLoading(true);
           setMessage("");
 
+          let url =
+            `/api/sub-agents?userId=${encodeURIComponent(
+              userId
+            )}&activeOnly=false`;
+
+          if (
+            assignedStaffId
+          ) {
+            url +=
+              `&assignedStaffId=${encodeURIComponent(
+                assignedStaffId
+              )}`;
+          }
+
           const response =
             await fetch(
-              `/api/sub-agents?userId=${encodeURIComponent(
-                userId
-              )}&activeOnly=false`,
+              url,
               {
                 method: "GET",
                 cache:
@@ -564,20 +680,66 @@ export default function SubAgentsPage() {
         return;
       }
 
-      setUser(parsed);
+      const staffLogin =
+        isStaffLogin(
+          parsed
+        );
+
+      const ownerUserId =
+        staffLogin
+          ? String(
+              parsed.userId ||
+                ""
+            )
+          : String(
+              parsed.id ||
+                ""
+            );
+
+      const loggedStaffId =
+        staffLogin
+          ? String(
+              parsed.staffId ||
+                parsed.id ||
+                ""
+            )
+          : "";
+
+      if (!ownerUserId) {
+        throw new Error(
+          "Owning Agent ID was not found for this login."
+        );
+      }
+
+      setUser({
+        ...parsed,
+        userId:
+          ownerUserId,
+        staffId:
+          loggedStaffId ||
+          parsed.staffId ||
+          null,
+      });
 
       localStorage.setItem(
         "userId",
-        parsed.id
+        ownerUserId
       );
 
       void Promise.all([
         loadSubAgents(
-          parsed.id
+          ownerUserId,
+          loggedStaffId
         ),
-        loadStaff(
-          parsed.id
-        ),
+        /*
+         * Staff users do not need the complete Staff list because they
+         * cannot transfer Sub-Agents to another Staff member.
+         */
+        staffLogin
+          ? Promise.resolve()
+          : loadStaff(
+              ownerUserId
+            ),
       ]);
     } catch (error) {
       console.error(
@@ -594,6 +756,51 @@ export default function SubAgentsPage() {
     loadSubAgents,
     loadStaff,
   ]);
+
+  const staffLogin =
+    useMemo(
+      () =>
+        isStaffLogin(
+          user
+        ),
+      [
+        user,
+      ]
+    );
+
+  const ownerUserId =
+    useMemo(
+      () =>
+        staffLogin
+          ? String(
+              user?.userId ||
+                ""
+            )
+          : String(
+              user?.id ||
+                ""
+            ),
+      [
+        staffLogin,
+        user,
+      ]
+    );
+
+  const loggedStaffId =
+    useMemo(
+      () =>
+        staffLogin
+          ? String(
+              user?.staffId ||
+                user?.id ||
+                ""
+            )
+          : "",
+      [
+        staffLogin,
+        user,
+      ]
+    );
 
   /* ------------------------------------------------------------------------ */
   /* COUNTS                                                                   */
@@ -780,7 +987,8 @@ export default function SubAgentsPage() {
   async function saveTransfer() {
     if (
       !transferTarget ||
-      !user?.id
+      !ownerUserId ||
+      staffLogin
     ) {
       return;
     }
@@ -823,7 +1031,7 @@ export default function SubAgentsPage() {
                   "TRANSFER_STAFF",
 
                 userId:
-                  user.id,
+                  ownerUserId,
 
                 subAgentId:
                   transferTarget.id,
@@ -873,7 +1081,8 @@ export default function SubAgentsPage() {
       closeTransfer();
 
       await loadSubAgents(
-        user.id
+        ownerUserId,
+        loggedStaffId
       );
     } catch (error) {
       console.error(
@@ -898,7 +1107,7 @@ export default function SubAgentsPage() {
   async function openHistory(
     subAgent: SubAgent
   ) {
-    if (!user?.id) {
+    if (!ownerUserId) {
       return;
     }
 
@@ -914,7 +1123,7 @@ export default function SubAgentsPage() {
       const response =
         await fetch(
           `/api/sub-agents?userId=${encodeURIComponent(
-            user.id
+            ownerUserId
           )}&subAgentId=${encodeURIComponent(
             subAgent.id
           )}&includeHistory=true`,
@@ -990,7 +1199,9 @@ export default function SubAgentsPage() {
           <div>
 
             <p className="text-xs font-semibold text-blue-200">
-              Agent Platform
+              {staffLogin
+                ? "Staff Portal"
+                : "Agent Platform"}
             </p>
 
             <h1 className="text-2xl font-black">
@@ -998,13 +1209,19 @@ export default function SubAgentsPage() {
             </h1>
 
             <p className="mt-1 text-xs text-blue-200">
-              Manage, assign and transfer your Sub-Agent network
+              {staffLogin
+                ? "View the Sub-Agents assigned to you"
+                : "Manage, assign and transfer your Sub-Agent network"}
             </p>
 
           </div>
 
           <Link
-            href="/dashboard"
+            href={
+              staffLogin
+                ? "/staff/dashboard"
+                : "/dashboard"
+            }
             className="rounded-xl bg-white/10 px-4 py-2 text-sm font-black text-white hover:bg-white/20"
           >
             ← Dashboard
@@ -1071,41 +1288,45 @@ export default function SubAgentsPage() {
             valueClass="text-red-700"
           />
 
-          <SummaryButton
-            label="Agent Direct"
-            value={
-              agentDirectCount
-            }
-            active={
-              filter ===
-              "AGENT_DIRECT"
-            }
-            onClick={() =>
-              setFilter(
-                "AGENT_DIRECT"
-              )
-            }
-            activeClass="border-amber-300 bg-amber-50"
-            valueClass="text-amber-700"
-          />
+          {!staffLogin && (
+            <>
+              <SummaryButton
+                label="Agent Direct"
+                value={
+                  agentDirectCount
+                }
+                active={
+                  filter ===
+                  "AGENT_DIRECT"
+                }
+                onClick={() =>
+                  setFilter(
+                    "AGENT_DIRECT"
+                  )
+                }
+                activeClass="border-amber-300 bg-amber-50"
+                valueClass="text-amber-700"
+              />
 
-          <SummaryButton
-            label="With Staff"
-            value={
-              staffAssignedCount
-            }
-            active={
-              filter ===
-              "STAFF_ASSIGNED"
-            }
-            onClick={() =>
-              setFilter(
-                "STAFF_ASSIGNED"
-              )
-            }
-            activeClass="border-violet-300 bg-violet-50"
-            valueClass="text-violet-700"
-          />
+              <SummaryButton
+                label="With Staff"
+                value={
+                  staffAssignedCount
+                }
+                active={
+                  filter ===
+                  "STAFF_ASSIGNED"
+                }
+                onClick={() =>
+                  setFilter(
+                    "STAFF_ASSIGNED"
+                  )
+                }
+                activeClass="border-violet-300 bg-violet-50"
+                valueClass="text-violet-700"
+              />
+            </>
+          )}
 
         </div>
 
@@ -1113,7 +1334,13 @@ export default function SubAgentsPage() {
 
         <div className="mt-5 rounded-3xl border bg-white p-4 shadow-sm">
 
-          <div className="grid gap-3 md:grid-cols-[1fr_260px_auto]">
+          <div
+            className={`grid gap-3 ${
+              staffLogin
+                ? "md:grid-cols-[1fr_auto]"
+                : "md:grid-cols-[1fr_260px_auto]"
+            }`}
+          >
 
             <input
               value={search}
@@ -1124,45 +1351,51 @@ export default function SubAgentsPage() {
                   event.target.value
                 )
               }
-              placeholder="Search name, code, mobile, district or Staff..."
+              placeholder={
+                staffLogin
+                  ? "Search my Sub-Agents by name, code, mobile or district..."
+                  : "Search name, code, mobile, district or Staff..."
+              }
               className="min-w-0 rounded-xl border-2 border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-900 outline-none focus:border-blue-600"
             />
 
-            <select
-              value={
-                staffFilter
-              }
-              onChange={(
-                event
-              ) =>
-                setStaffFilter(
-                  event.target.value
-                )
-              }
-              className="rounded-xl border-2 border-slate-200 bg-white px-4 py-3 text-sm font-bold text-slate-900 outline-none focus:border-blue-600"
-            >
-              <option value="">
-                All Staff / Agent Direct
-              </option>
+            {!staffLogin && (
+              <select
+                value={
+                  staffFilter
+                }
+                onChange={(
+                  event
+                ) =>
+                  setStaffFilter(
+                    event.target.value
+                  )
+                }
+                className="rounded-xl border-2 border-slate-200 bg-white px-4 py-3 text-sm font-bold text-slate-900 outline-none focus:border-blue-600"
+              >
+                <option value="">
+                  All Staff / Agent Direct
+                </option>
 
-              {staffs.map(
-                (staff) => (
-                  <option
-                    key={
-                      staff.id
-                    }
-                    value={
-                      staff.id
-                    }
-                  >
-                    {staffLabel(
-                      staff
-                    )}
-                  </option>
-                )
-              )}
+                {staffs.map(
+                  (staff) => (
+                    <option
+                      key={
+                        staff.id
+                      }
+                      value={
+                        staff.id
+                      }
+                    >
+                      {staffLabel(
+                        staff
+                      )}
+                    </option>
+                  )
+                )}
 
-            </select>
+              </select>
+            )}
 
             <Link
               href="/sub-agents/add"
@@ -1414,9 +1647,99 @@ export default function SubAgentsPage() {
 
                         </div>
 
+                        {/* BUSINESS SUMMARY */}
+
+                        {item.businessSummary && (
+                          <div className="w-full lg:max-w-[620px]">
+
+                            <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+
+                              <div className="rounded-xl border border-blue-100 bg-blue-50 p-3">
+                                <p className="text-[10px] font-black uppercase text-blue-700">
+                                  Active Policies
+                                </p>
+                                <p className="mt-1 text-xl font-black text-blue-950">
+                                  {item.businessSummary.activePolicies}
+                                </p>
+                              </div>
+
+                              <div className="rounded-xl border border-emerald-100 bg-emerald-50 p-3">
+                                <p className="text-[10px] font-black uppercase text-emerald-700">
+                                  Active Premium
+                                </p>
+                                <p className="mt-1 text-base font-black text-emerald-900">
+                                  {formatMoney(
+                                    item.businessSummary.activePremium
+                                  )}
+                                </p>
+                              </div>
+
+                              <div className="rounded-xl border border-violet-100 bg-violet-50 p-3">
+                                <p className="text-[10px] font-black uppercase text-violet-700">
+                                  New Business Month
+                                </p>
+                                <p className="mt-1 text-xl font-black text-violet-950">
+                                  {item.businessSummary.newBusinessThisMonthCount}
+                                </p>
+                                <p className="mt-1 text-[11px] font-bold text-violet-700">
+                                  {formatMoney(
+                                    item.businessSummary.newBusinessThisMonthPremium
+                                  )}
+                                </p>
+                              </div>
+
+                              <div className="rounded-xl border border-orange-100 bg-orange-50 p-3">
+                                <p className="text-[10px] font-black uppercase text-orange-700">
+                                  Renewals 30 Days
+                                </p>
+                                <p className="mt-1 text-xl font-black text-orange-950">
+                                  {item.businessSummary.renewalDue30Count}
+                                </p>
+                                <p className="mt-1 text-[11px] font-bold text-orange-700">
+                                  {formatMoney(
+                                    item.businessSummary.renewalDue30Premium
+                                  )}
+                                </p>
+                              </div>
+
+                            </div>
+
+                            <div className="mt-2 flex flex-wrap gap-2 text-[11px] font-bold text-slate-600">
+
+                              <span className="rounded-full bg-slate-100 px-3 py-1.5">
+                                Last Policy:{" "}
+                                {formatDate(
+                                  item.businessSummary.lastPolicyDate
+                                )}
+                              </span>
+
+                              <span className="rounded-full bg-slate-100 px-3 py-1.5">
+                                Last Activity:{" "}
+                                {formatDate(
+                                  item.businessSummary.lastActivityDate
+                                )}
+                              </span>
+
+                              <span className="rounded-full bg-slate-100 px-3 py-1.5">
+                                Motor {item.businessSummary.portfolio.motor}
+                              </span>
+
+                              <span className="rounded-full bg-slate-100 px-3 py-1.5">
+                                Health {item.businessSummary.portfolio.health}
+                              </span>
+
+                              <span className="rounded-full bg-slate-100 px-3 py-1.5">
+                                Life {item.businessSummary.portfolio.life}
+                              </span>
+
+                            </div>
+
+                          </div>
+                        )}
+
                         {/* ACTIONS */}
 
-                        <div className="flex flex-wrap gap-2 lg:max-w-[420px] lg:justify-end">
+                        <div className="flex flex-wrap gap-2 lg:max-w-[520px] lg:justify-end">
 
                           {phone && (
                             <a
@@ -1438,19 +1761,39 @@ export default function SubAgentsPage() {
                             </a>
                           )}
 
-                          <button
-                            type="button"
-                            onClick={() =>
-                              openTransfer(
-                                item
-                              )
-                            }
-                            className="rounded-xl bg-blue-700 px-4 py-2 text-xs font-black text-white"
+                          {!staffLogin && (
+                            <button
+                              type="button"
+                              onClick={() =>
+                                openTransfer(
+                                  item
+                                )
+                              }
+                              className="rounded-xl bg-blue-700 px-4 py-2 text-xs font-black text-white"
+                            >
+                              {assigned
+                                ? "Transfer"
+                                : "Assign Staff"}
+                            </button>
+                          )}
+
+                          <Link
+                            href={`/policies?openSearch=true&search=${encodeURIComponent(
+                              item.name
+                            )}`}
+                            className="rounded-xl border border-blue-200 bg-blue-50 px-4 py-2 text-xs font-black text-blue-800"
                           >
-                            {assigned
-                              ? "Transfer"
-                              : "Assign Staff"}
-                          </button>
+                            📄 All Policies
+                          </Link>
+
+                          <Link
+                            href={`/renewals?subAgentId=${encodeURIComponent(
+                              item.id
+                            )}`}
+                            className="rounded-xl border border-orange-200 bg-orange-50 px-4 py-2 text-xs font-black text-orange-800"
+                          >
+                            🔄 Renewals
+                          </Link>
 
                           <button
                             type="button"
@@ -1842,7 +2185,11 @@ export default function SubAgentsPage() {
         <div className="grid h-16 grid-cols-5">
 
           <Link
-            href="/dashboard"
+            href={
+              staffLogin
+                ? "/staff/dashboard"
+                : "/dashboard"
+            }
             className="flex flex-col items-center justify-center text-slate-600"
           >
             <span className="text-lg">

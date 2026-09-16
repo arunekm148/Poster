@@ -17,9 +17,51 @@ import {
 
 type AgentUser = {
   id?: string;
+  userId?: string;
+  staffId?: string | null;
   name?: string;
   phone?: string;
   role?: string;
+  accountType?: "USER" | "STAFF";
+  staffRole?: string | null;
+};
+
+type SubAgentBusinessSummary = {
+  totalPolicies: number;
+  activePolicies: number;
+  totalPremium: number;
+  activePremium: number;
+
+  totalCustomers: number;
+  activeCustomers: number;
+
+  newBusinessThisMonthCount: number;
+  newBusinessThisMonthPremium: number;
+
+  newBusinessFyCount: number;
+  newBusinessFyPremium: number;
+
+  renewedThisMonthCount: number;
+  renewedThisMonthPremium: number;
+
+  renewalDue7Count: number;
+  renewalDue30Count: number;
+  renewalDue30Premium: number;
+
+  expiredCount: number;
+
+  portfolio: {
+    motor: number;
+    health: number;
+    life: number;
+    other: number;
+  };
+
+  lastPolicyDate?: string | null;
+  lastCustomerDate?: string | null;
+  lastActivityDate?: string | null;
+
+  financialYear?: string | null;
 };
 
 type SubAgent = {
@@ -51,6 +93,19 @@ type SubAgent = {
   createdAt?: string | null;
 
   updatedAt?: string | null;
+
+  assignedStaffId?: string | null;
+
+  assignedStaff?: {
+    id: string;
+    staffCode?: string | null;
+    name?: string | null;
+    staffRole?: string | null;
+    designation?: string | null;
+  } | null;
+
+  businessSummary?:
+    SubAgentBusinessSummary | null;
 };
 
 type Customer = {
@@ -151,6 +206,63 @@ function formatDate(
       month: "short",
       year: "numeric",
     }
+  );
+}
+
+function formatMoney(
+  value?:
+    | number
+    | string
+    | null
+) {
+  const amount =
+    Number(
+      value || 0
+    );
+
+  if (
+    !Number.isFinite(
+      amount
+    )
+  ) {
+    return "₹0";
+  }
+
+  return `₹${amount.toLocaleString(
+    "en-IN",
+    {
+      maximumFractionDigits:
+        2,
+    }
+  )}`;
+}
+
+function isStaffLogin(
+  user?: AgentUser | null
+) {
+  const accountType =
+    String(
+      user?.accountType ||
+        ""
+    )
+      .trim()
+      .toUpperCase();
+
+  const role =
+    String(
+      user?.role ||
+        user?.staffRole ||
+        ""
+    )
+      .trim()
+      .toUpperCase();
+
+  return (
+    accountType ===
+      "STAFF" ||
+    role === "STAFF" ||
+    role ===
+      "SUPERVISOR"
   );
 }
 
@@ -269,11 +381,37 @@ export default function SubAgentDetailsPage() {
           return;
         }
 
-        setUser(parsed);
+        const staffLogin =
+          isStaffLogin(
+            parsed
+          );
+
+        const ownerUserId =
+          staffLogin
+            ? String(
+                parsed.userId ||
+                  ""
+              )
+            : String(
+                parsed.id ||
+                  ""
+              );
+
+        if (!ownerUserId) {
+          throw new Error(
+            "Owning Agent ID was not found for this login."
+          );
+        }
+
+        setUser({
+          ...parsed,
+          userId:
+            ownerUserId,
+        });
 
         localStorage.setItem(
           "userId",
-          parsed.id
+          ownerUserId
         );
 
         /* ------------------------------------------------------------------ */
@@ -283,7 +421,7 @@ export default function SubAgentDetailsPage() {
         const subAgentResponse =
           await fetch(
             `/api/sub-agents?userId=${encodeURIComponent(
-              parsed.id
+              ownerUserId
             )}&subAgentId=${encodeURIComponent(
               subAgentId
             )}&activeOnly=false`,
@@ -371,7 +509,7 @@ export default function SubAgentDetailsPage() {
         const customerResponse =
           await fetch(
             `/api/customers?userId=${encodeURIComponent(
-              parsed.id
+              ownerUserId
             )}&limit=500`,
             {
               cache:
@@ -774,6 +912,259 @@ export default function SubAgentDetailsPage() {
           </div>
 
         </div>
+
+        {/* ------------------------------------------------------------------ */}
+        {/* BUSINESS SUMMARY                                                   */}
+        {/* ------------------------------------------------------------------ */}
+
+        {subAgent.businessSummary && (
+          <div className="mt-5 rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+
+            <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+
+              <div>
+
+                <p className="text-xs font-black uppercase tracking-wider text-blue-700">
+                  Business Summary
+                </p>
+
+                <h2 className="mt-1 text-xl font-black text-slate-950">
+                  📊 Complete Sub-Agent Portfolio
+                </h2>
+
+                <p className="mt-1 text-sm font-semibold text-slate-500">
+                  {subAgent.businessSummary.financialYear ||
+                    "Current Financial Year"}
+                </p>
+
+              </div>
+
+              <div className="flex flex-wrap gap-2">
+
+                <Link
+                  href={`/policies?openSearch=true&search=${encodeURIComponent(
+                    subAgent.name
+                  )}`}
+                  className="rounded-xl bg-blue-700 px-4 py-2.5 text-xs font-black text-white"
+                >
+                  📄 All Policies
+                </Link>
+
+                <Link
+                  href={`/renewals?subAgentId=${encodeURIComponent(
+                    subAgent.id
+                  )}`}
+                  className="rounded-xl bg-orange-600 px-4 py-2.5 text-xs font-black text-white"
+                >
+                  🔄 Renewal List
+                </Link>
+
+                <Link
+                  href={`/customers?subAgentId=${encodeURIComponent(
+                    subAgent.id
+                  )}`}
+                  className="rounded-xl border border-violet-200 bg-violet-50 px-4 py-2.5 text-xs font-black text-violet-800"
+                >
+                  👥 Customers
+                </Link>
+
+              </div>
+
+            </div>
+
+            <div className="mt-5 grid grid-cols-2 gap-3 md:grid-cols-4">
+
+              <SummaryMetric
+                label="Active Policies"
+                value={String(
+                  subAgent.businessSummary.activePolicies
+                )}
+                helper={`${subAgent.businessSummary.totalPolicies} total`}
+                className="border-blue-100 bg-blue-50 text-blue-900"
+              />
+
+              <SummaryMetric
+                label="Active Premium"
+                value={formatMoney(
+                  subAgent.businessSummary.activePremium
+                )}
+                helper={`Total ${formatMoney(
+                  subAgent.businessSummary.totalPremium
+                )}`}
+                className="border-emerald-100 bg-emerald-50 text-emerald-900"
+              />
+
+              <SummaryMetric
+                label="Customers"
+                value={String(
+                  subAgent.businessSummary.activeCustomers
+                )}
+                helper={`${subAgent.businessSummary.totalCustomers} total`}
+                className="border-violet-100 bg-violet-50 text-violet-900"
+              />
+
+              <SummaryMetric
+                label="Last Activity"
+                value={formatDate(
+                  subAgent.businessSummary.lastActivityDate
+                )}
+                helper={`Last policy ${formatDate(
+                  subAgent.businessSummary.lastPolicyDate
+                )}`}
+                className="border-slate-200 bg-slate-50 text-slate-900"
+              />
+
+            </div>
+
+            <div className="mt-5 grid gap-4 lg:grid-cols-2">
+
+              <div className="rounded-2xl border border-violet-100 bg-violet-50 p-4">
+
+                <p className="text-xs font-black uppercase tracking-wide text-violet-700">
+                  🆕 New Business
+                </p>
+
+                <div className="mt-3 grid grid-cols-2 gap-3">
+
+                  <div className="rounded-xl bg-white p-3">
+                    <p className="text-[10px] font-black uppercase text-slate-500">
+                      This Month
+                    </p>
+                    <p className="mt-1 text-2xl font-black text-violet-900">
+                      {subAgent.businessSummary.newBusinessThisMonthCount}
+                    </p>
+                    <p className="mt-1 text-xs font-bold text-violet-700">
+                      {formatMoney(
+                        subAgent.businessSummary.newBusinessThisMonthPremium
+                      )}
+                    </p>
+                  </div>
+
+                  <div className="rounded-xl bg-white p-3">
+                    <p className="text-[10px] font-black uppercase text-slate-500">
+                      This FY
+                    </p>
+                    <p className="mt-1 text-2xl font-black text-violet-900">
+                      {subAgent.businessSummary.newBusinessFyCount}
+                    </p>
+                    <p className="mt-1 text-xs font-bold text-violet-700">
+                      {formatMoney(
+                        subAgent.businessSummary.newBusinessFyPremium
+                      )}
+                    </p>
+                  </div>
+
+                </div>
+
+              </div>
+
+              <div className="rounded-2xl border border-orange-100 bg-orange-50 p-4">
+
+                <div className="flex items-center justify-between gap-2">
+
+                  <p className="text-xs font-black uppercase tracking-wide text-orange-700">
+                    🔄 Renewals
+                  </p>
+
+                  <Link
+                    href={`/renewals?subAgentId=${encodeURIComponent(
+                      subAgent.id
+                    )}`}
+                    className="text-xs font-black text-orange-800"
+                  >
+                    Open List →
+                  </Link>
+
+                </div>
+
+                <div className="mt-3 grid grid-cols-2 gap-3">
+
+                  <div className="rounded-xl bg-white p-3">
+                    <p className="text-[10px] font-black uppercase text-slate-500">
+                      Due 7 Days
+                    </p>
+                    <p className="mt-1 text-2xl font-black text-orange-900">
+                      {subAgent.businessSummary.renewalDue7Count}
+                    </p>
+                  </div>
+
+                  <div className="rounded-xl bg-white p-3">
+                    <p className="text-[10px] font-black uppercase text-slate-500">
+                      Due 30 Days
+                    </p>
+                    <p className="mt-1 text-2xl font-black text-orange-900">
+                      {subAgent.businessSummary.renewalDue30Count}
+                    </p>
+                    <p className="mt-1 text-xs font-bold text-orange-700">
+                      {formatMoney(
+                        subAgent.businessSummary.renewalDue30Premium
+                      )}
+                    </p>
+                  </div>
+
+                  <div className="rounded-xl bg-white p-3">
+                    <p className="text-[10px] font-black uppercase text-slate-500">
+                      Renewed This Month
+                    </p>
+                    <p className="mt-1 text-2xl font-black text-emerald-800">
+                      {subAgent.businessSummary.renewedThisMonthCount}
+                    </p>
+                    <p className="mt-1 text-xs font-bold text-emerald-700">
+                      {formatMoney(
+                        subAgent.businessSummary.renewedThisMonthPremium
+                      )}
+                    </p>
+                  </div>
+
+                  <div className="rounded-xl bg-white p-3">
+                    <p className="text-[10px] font-black uppercase text-slate-500">
+                      Expired / Pending
+                    </p>
+                    <p className="mt-1 text-2xl font-black text-red-700">
+                      {subAgent.businessSummary.expiredCount}
+                    </p>
+                  </div>
+
+                </div>
+
+              </div>
+
+            </div>
+
+            <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50 p-4">
+
+              <p className="text-xs font-black uppercase tracking-wide text-slate-600">
+                Portfolio Mix
+              </p>
+
+              <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
+
+                <PortfolioBox
+                  label="🚗 Motor"
+                  value={subAgent.businessSummary.portfolio.motor}
+                />
+
+                <PortfolioBox
+                  label="❤️ Health"
+                  value={subAgent.businessSummary.portfolio.health}
+                />
+
+                <PortfolioBox
+                  label="🛡️ Life"
+                  value={subAgent.businessSummary.portfolio.life}
+                />
+
+                <PortfolioBox
+                  label="📦 Other"
+                  value={subAgent.businessSummary.portfolio.other}
+                />
+
+              </div>
+
+            </div>
+
+          </div>
+        )}
 
         {/* ------------------------------------------------------------------ */}
         {/* INFORMATION                                                        */}
@@ -1359,3 +1750,56 @@ export default function SubAgentDetailsPage() {
     </main>
   );
 }
+
+function SummaryMetric({
+  label,
+  value,
+  helper,
+  className,
+}: {
+  label: string;
+  value: string;
+  helper?: string;
+  className: string;
+}) {
+  return (
+    <div
+      className={`rounded-2xl border p-4 ${className}`}
+    >
+      <p className="text-[10px] font-black uppercase tracking-wide opacity-70">
+        {label}
+      </p>
+
+      <p className="mt-2 break-words text-xl font-black">
+        {value}
+      </p>
+
+      {helper && (
+        <p className="mt-1 text-[11px] font-bold opacity-70">
+          {helper}
+        </p>
+      )}
+    </div>
+  );
+}
+
+function PortfolioBox({
+  label,
+  value,
+}: {
+  label: string;
+  value: number;
+}) {
+  return (
+    <div className="rounded-xl bg-white p-3 shadow-sm">
+      <p className="text-xs font-bold text-slate-500">
+        {label}
+      </p>
+
+      <p className="mt-1 text-xl font-black text-slate-950">
+        {value}
+      </p>
+    </div>
+  );
+}
+

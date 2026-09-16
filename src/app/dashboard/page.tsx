@@ -3334,9 +3334,50 @@ Save
 
 </div>
 
+{/* POLICY SEARCH */}
+
+<div className="mt-5">
+
+<Link
+href="/policies?openSearch=true"
+className="flex items-center justify-between gap-4 rounded-2xl border border-blue-200 bg-gradient-to-r from-blue-50 to-indigo-50 p-4 shadow-sm transition hover:border-blue-400 hover:shadow-md"
+>
+
+<div className="flex min-w-0 items-center gap-3">
+
+<div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-blue-700 text-2xl text-white shadow-sm">
+🔎
+</div>
+
+<div className="min-w-0">
+
+<p className="text-[10px] font-black uppercase tracking-[0.18em] text-blue-700">
+Policy Search
+</p>
+
+<h2 className="mt-1 text-base font-black text-slate-950">
+Search Policies
+</h2>
+
+<p className="mt-1 text-xs font-semibold text-slate-600">
+Customer name • Policy number • Vehicle number • Mobile • Company • Sub-Agent • Staff owner
+</p>
+
+</div>
+
+</div>
+
+<div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-blue-700 font-black text-white">
+→
+</div>
+
+</Link>
+
+</div>
+
 {/* TOP SUMMARY */}
 
-<div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
+<div className="mt-5 grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
 
 <Link
 href="/customers"
@@ -4031,7 +4072,7 @@ birthday?.label
 Quick Actions
 </h2>
 
-<div className="grid grid-cols-3 gap-2 sm:grid-cols-4 lg:grid-cols-7">
+<div className="grid grid-cols-3 gap-2 sm:grid-cols-4 lg:grid-cols-8">
 
 <Link
 href="/enquiries/add"
@@ -4073,6 +4114,19 @@ Sub Agents
 </p>
 </Link>
 )}
+
+<Link
+href="/policies?openSearch=true"
+className="rounded-2xl border border-indigo-200 bg-indigo-50 p-3 text-center shadow-sm"
+>
+<div className="text-xl">
+🔎
+</div>
+
+<p className="mt-1 text-xs font-bold text-indigo-800">
+Search Policy
+</p>
+</Link>
 
 <Link
 href="/policies/add"

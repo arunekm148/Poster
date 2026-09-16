@@ -4,6 +4,7 @@ import {
 } from "next/server";
 
 import prisma from "@/lib/prisma";
+import { getSessionFromRequest } from "@/lib/session";
 
 /* -------------------------------------------------------------------------- */
 /* HELPERS                                                                    */
@@ -249,10 +250,64 @@ export async function GET(
       request.url
     );
 
-    const userId =
+    const requestedUserId =
       searchParams
         .get("userId")
         ?.trim() || "";
+
+    const session =
+      getSessionFromRequest(
+        request
+      );
+
+    if (!session) {
+      return NextResponse.json(
+        {
+          success: false,
+          message:
+            "Please login again.",
+        },
+        {
+          status: 401,
+        }
+      );
+    }
+
+    const isStaffRequest =
+      session.accountType ===
+        "STAFF" &&
+      Boolean(
+        session.staffId
+      );
+
+    let userId =
+      session.userId;
+
+    if (
+      session.accountType ===
+        "USER" &&
+      session.role ===
+        "ADMIN" &&
+      requestedUserId
+    ) {
+      userId =
+        requestedUserId;
+    } else if (
+      requestedUserId &&
+      requestedUserId !==
+        session.userId
+    ) {
+      return NextResponse.json(
+        {
+          success: false,
+          message:
+            "You are not allowed to view policies for this account.",
+        },
+        {
+          status: 403,
+        }
+      );
+    }
 
     const customerId =
       searchParams
@@ -412,6 +467,14 @@ export async function GET(
           where: {
             id: policyId,
             userId,
+
+            ...(isStaffRequest &&
+            session.staffId
+              ? {
+                  originStaffId:
+                    session.staffId,
+                }
+              : {}),
           },
 
           include: {
@@ -444,6 +507,17 @@ export async function GET(
                 phone: true,
                 whatsapp: true,
                 email: true,
+              },
+            },
+
+            originStaff: {
+              select: {
+                id: true,
+                staffCode: true,
+                name: true,
+                phone: true,
+                staffRole: true,
+                designation: true,
               },
             },
 
@@ -514,6 +588,14 @@ export async function GET(
       await prisma.policy.findMany({
         where: {
           userId,
+
+          ...(isStaffRequest &&
+          session.staffId
+            ? {
+                originStaffId:
+                  session.staffId,
+              }
+            : {}),
 
           ...(customerId
             ? {
@@ -727,6 +809,17 @@ export async function GET(
             },
           },
 
+          originStaff: {
+            select: {
+              id: true,
+              staffCode: true,
+              name: true,
+              phone: true,
+              staffRole: true,
+              designation: true,
+            },
+          },
+
           consultant: {
             select: {
               id: true,
@@ -803,14 +896,68 @@ export async function POST(
     const body =
       await request.json();
 
+    const session =
+      getSessionFromRequest(
+        request
+      );
+
+    if (!session) {
+      return NextResponse.json(
+        {
+          success: false,
+          message:
+            "Please login again.",
+        },
+        {
+          status: 401,
+        }
+      );
+    }
+
+    const isStaffRequest =
+      session.accountType ===
+        "STAFF" &&
+      Boolean(
+        session.staffId
+      );
+
     /* ---------------------------------------------------------------------- */
     /* BASIC VALUES                                                           */
     /* ---------------------------------------------------------------------- */
 
-    const userId =
+    const requestedUserId =
       String(
         body.userId || ""
       ).trim();
+
+    let userId =
+      session.userId;
+
+    if (
+      session.accountType ===
+        "USER" &&
+      session.role ===
+        "ADMIN" &&
+      requestedUserId
+    ) {
+      userId =
+        requestedUserId;
+    } else if (
+      requestedUserId &&
+      requestedUserId !==
+        session.userId
+    ) {
+      return NextResponse.json(
+        {
+          success: false,
+          message:
+            "You are not allowed to create a policy for this account.",
+        },
+        {
+          status: 403,
+        }
+      );
+    }
 
     const customerId =
       String(
@@ -1428,11 +1575,56 @@ export async function POST(
 
     let originStaffId:
       | string
-      | null = null;
+      | null =
+        isStaffRequest
+          ? session.staffId
+          : null;
 
     let originSupervisorId:
       | string
       | null = null;
+
+    if (
+      isStaffRequest &&
+      session.staffId
+    ) {
+      const loggedStaff =
+        await prisma.staff.findFirst({
+          where: {
+            id:
+              session.staffId,
+            userId,
+            isActive:
+              true,
+          },
+
+          select: {
+            id: true,
+            staffRole: true,
+            supervisorId: true,
+          },
+        });
+
+      if (!loggedStaff) {
+        return NextResponse.json(
+          {
+            success: false,
+            message:
+              "Logged-in staff account was not found or is inactive.",
+          },
+          {
+            status: 403,
+          }
+        );
+      }
+
+      originSupervisorId =
+        loggedStaff.staffRole ===
+          "SUPERVISOR"
+          ? loggedStaff.id
+          : loggedStaff.supervisorId ||
+            null;
+    }
 
     if (subAgentId) {
       const sourceSubAgent =
@@ -1469,22 +1661,42 @@ export async function POST(
         );
       }
 
-      originStaffId =
-        sourceSubAgent.assignedStaffId ||
-        null;
-
       if (
-        sourceSubAgent.assignedStaff
-          ?.staffRole ===
-        "SUPERVISOR"
+        isStaffRequest &&
+        session.staffId &&
+        sourceSubAgent.assignedStaffId !==
+          session.staffId
       ) {
-        originSupervisorId =
-          sourceSubAgent.assignedStaff.id;
-      } else {
-        originSupervisorId =
-          sourceSubAgent.assignedStaff
-            ?.supervisorId ||
+        return NextResponse.json(
+          {
+            success: false,
+            message:
+              "This Sub-Agent is assigned to another Staff member.",
+          },
+          {
+            status: 403,
+          }
+        );
+      }
+
+      if (!isStaffRequest) {
+        originStaffId =
+          sourceSubAgent.assignedStaffId ||
           null;
+
+        if (
+          sourceSubAgent.assignedStaff
+            ?.staffRole ===
+          "SUPERVISOR"
+        ) {
+          originSupervisorId =
+            sourceSubAgent.assignedStaff.id;
+        } else {
+          originSupervisorId =
+            sourceSubAgent.assignedStaff
+              ?.supervisorId ||
+            null;
+        }
       }
     }
 

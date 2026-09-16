@@ -16,25 +16,20 @@ import { useRouter } from "next/navigation";
 type StaffUser = {
   id?: string;
   userId?: string;
-
   staffCode?: string;
   name?: string;
   phone?: string;
-
   staffRole?: string;
   designation?: string | null;
   department?: string | null;
-
   supervisorId?: string | null;
 };
 
 type Enquiry = {
   id: string;
   status?: string | null;
-
   assignedStaffId?: string | null;
   assignedSupervisorId?: string | null;
-
   enquiryDate?: string | null;
   createdAt?: string | null;
 };
@@ -42,29 +37,22 @@ type Enquiry = {
 type FollowUp = {
   id: string;
   enquiryId?: string | null;
-
   status?: string | null;
-
   followUpDate?: string | null;
   nextFollowUpDate?: string | null;
 };
 
 type Policy = {
   id: string;
-
   originStaffId?: string | null;
   originSupervisorId?: string | null;
-
   subAgentId?: string | null;
-
   premium?: number | string | null;
   actualPremium?: number | string | null;
   customerPremium?: number | string | null;
-
   startDate?: string | null;
   createdAt?: string | null;
   expiryDate?: string | null;
-
   isActive?: boolean;
 };
 
@@ -249,7 +237,6 @@ function getMonthRange(
         date.getMonth(),
         1
       ),
-
     end:
       new Date(
         date.getFullYear(),
@@ -284,7 +271,6 @@ function getFinancialYearRange(
         3,
         1
       ),
-
     end:
       new Date(
         startYear + 1,
@@ -295,7 +281,6 @@ function getFinancialYearRange(
         59,
         999
       ),
-
     label:
       `FY ${startYear}-${String(
         startYear + 1
@@ -350,10 +335,6 @@ export default function StaffDashboardPage() {
       subAgents: [],
       customers: [],
     });
-
-  /* ------------------------------------------------------------------------ */
-  /* LOAD DASHBOARD DATA                                                      */
-  /* ------------------------------------------------------------------------ */
 
   const loadDashboard =
     useCallback(
@@ -580,10 +561,6 @@ export default function StaffDashboardPage() {
       []
     );
 
-  /* ------------------------------------------------------------------------ */
-  /* INITIAL                                                                  */
-  /* ------------------------------------------------------------------------ */
-
   useEffect(() => {
     const loggedInStaff =
       getLoggedInStaff();
@@ -595,7 +572,6 @@ export default function StaffDashboardPage() {
       router.replace(
         "/login"
       );
-
       return;
     }
 
@@ -627,10 +603,6 @@ export default function StaffDashboardPage() {
         timer
       );
   }, []);
-
-  /* ------------------------------------------------------------------------ */
-  /* METRICS                                                                  */
-  /* ------------------------------------------------------------------------ */
 
   const metrics =
     useMemo(() => {
@@ -687,7 +659,10 @@ export default function StaffDashboardPage() {
           (
             followUp
           ) =>
-            followUp.status ===
+            String(
+              followUp.status ||
+                ""
+            ).toUpperCase() ===
               "PENDING" &&
             Boolean(
               followUp.enquiryId &&
@@ -736,7 +711,7 @@ export default function StaffDashboardPage() {
             policy
           ) =>
             policy.originStaffId ===
-            staffId &&
+              staffId &&
             policy.isActive !==
               false
         );
@@ -826,7 +801,6 @@ export default function StaffDashboardPage() {
       return {
         assignedEnquiries:
           assignedEnquiries.length,
-
         todayEnquiries:
           assignedEnquiries.filter(
             (
@@ -840,25 +814,18 @@ export default function StaffDashboardPage() {
                 todayOnly
               )
           ).length,
-
         pendingFollowUps:
           pendingFollowUps.length,
-
         todayFollowUps:
           todayFollowUps.length,
-
         overdueFollowUps:
           overdueFollowUps.length,
-
         converted:
           converted.length,
-
         activePolicies:
           assignedPolicies.length,
-
         policiesThisMonth:
           policiesThisMonth.length,
-
         thisMonthPremium:
           policiesThisMonth.reduce(
             (
@@ -871,7 +838,6 @@ export default function StaffDashboardPage() {
               ),
             0
           ),
-
         fyPremium:
           fyPolicies.reduce(
             (
@@ -884,10 +850,8 @@ export default function StaffDashboardPage() {
               ),
             0
           ),
-
         renewalsDue:
           renewalsDue.length,
-
         renewalPremium:
           renewalsDue.reduce(
             (
@@ -900,13 +864,10 @@ export default function StaffDashboardPage() {
               ),
             0
           ),
-
         assignedSubAgents:
           assignedSubAgents.length,
-
         assignedCustomers:
           assignedCustomers.length,
-
         financialYearLabel:
           financialYear.label,
       };
@@ -915,23 +876,16 @@ export default function StaffDashboardPage() {
       data,
     ]);
 
-  /* ------------------------------------------------------------------------ */
-  /* LOGOUT                                                                   */
-  /* ------------------------------------------------------------------------ */
-
   function handleLogout() {
     localStorage.removeItem(
       "staffUser"
     );
-
     localStorage.removeItem(
       "agentUser"
     );
-
     localStorage.removeItem(
       "user"
     );
-
     localStorage.removeItem(
       "userId"
     );
@@ -941,14 +895,8 @@ export default function StaffDashboardPage() {
     );
   }
 
-  /* ------------------------------------------------------------------------ */
-  /* UI                                                                       */
-  /* ------------------------------------------------------------------------ */
-
   return (
     <main className="min-h-screen bg-slate-50 pb-24 text-slate-950">
-
-      {/* HEADER */}
 
       <header className="relative overflow-hidden bg-gradient-to-r from-slate-950 via-blue-950 to-slate-900 text-white">
 
@@ -1054,6 +1002,43 @@ export default function StaffDashboardPage() {
           </div>
         )}
 
+        {/* POLICY SEARCH */}
+
+        <Link
+          href="/policies?openSearch=true"
+          className="mb-4 flex items-center justify-between gap-4 rounded-2xl border border-blue-200 bg-gradient-to-r from-blue-50 to-indigo-50 p-4 shadow-sm transition hover:border-blue-400 hover:shadow-md"
+        >
+
+          <div className="flex min-w-0 items-center gap-3">
+
+            <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-blue-700 text-2xl text-white shadow-sm">
+              🔎
+            </div>
+
+            <div className="min-w-0">
+
+              <p className="text-[10px] font-black uppercase tracking-[0.18em] text-blue-700">
+                My Policy Search
+              </p>
+
+              <h2 className="mt-1 text-base font-black text-slate-950">
+                Search Policies
+              </h2>
+
+              <p className="mt-1 text-xs font-semibold text-slate-600">
+                Customer name • Policy number • Vehicle number • Mobile • Company • Sub-Agent
+              </p>
+
+            </div>
+
+          </div>
+
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-blue-700 font-black text-white">
+            →
+          </div>
+
+        </Link>
+
         {/* TODAY COMMAND CENTER */}
 
         <section className="overflow-hidden rounded-3xl bg-gradient-to-br from-blue-700 via-blue-800 to-violet-800 p-5 text-white shadow-xl">
@@ -1148,7 +1133,6 @@ export default function StaffDashboardPage() {
             <div className="flex items-center justify-between gap-4">
 
               <div>
-
                 <p className="text-[10px] font-black uppercase tracking-[0.18em] text-blue-700">
                   Attendance
                 </p>
@@ -1160,7 +1144,6 @@ export default function StaffDashboardPage() {
                 <p className="mt-1 text-sm font-semibold text-blue-700">
                   Punch in, punch out and view my attendance.
                 </p>
-
               </div>
 
               <span className="font-black text-blue-700">
@@ -1185,7 +1168,6 @@ export default function StaffDashboardPage() {
         <section className="mt-6">
 
           <div className="mb-3">
-
             <p className="text-[11px] font-black uppercase tracking-[0.18em] text-blue-700">
               Business Performance
             </p>
@@ -1193,7 +1175,6 @@ export default function StaffDashboardPage() {
             <h2 className="mt-1 text-xl font-black">
               My Business Snapshot
             </h2>
-
           </div>
 
           <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
@@ -1393,7 +1374,6 @@ export default function StaffDashboardPage() {
               href="/customers"
               className="rounded-2xl border border-blue-200 bg-blue-50 p-4"
             >
-
               <p className="text-xs font-black text-blue-700">
                 👥 Assigned Customers
               </p>
@@ -1403,14 +1383,12 @@ export default function StaffDashboardPage() {
                   ? "..."
                   : metrics.assignedCustomers}
               </p>
-
             </Link>
 
             <Link
               href="/sub-agents"
               className="rounded-2xl border border-violet-200 bg-violet-50 p-4"
             >
-
               <p className="text-xs font-black text-violet-700">
                 🤝 Assigned Sub-Agents
               </p>
@@ -1420,7 +1398,6 @@ export default function StaffDashboardPage() {
                   ? "..."
                   : metrics.assignedSubAgents}
               </p>
-
             </Link>
 
           </div>
@@ -1432,7 +1409,6 @@ export default function StaffDashboardPage() {
         <section className="mt-6">
 
           <div className="mb-3">
-
             <p className="text-[10px] font-black uppercase tracking-[0.18em] text-slate-500">
               Quick Actions
             </p>
@@ -1440,10 +1416,9 @@ export default function StaffDashboardPage() {
             <h2 className="mt-1 text-lg font-black">
               Start New Work
             </h2>
-
           </div>
 
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-5">
 
             <QuickAction
               href="/enquiries/add"
@@ -1457,6 +1432,13 @@ export default function StaffDashboardPage() {
               emoji="➕"
               title="Add Customer"
               className="bg-blue-700"
+            />
+
+            <QuickAction
+              href="/policies?openSearch=true"
+              emoji="🔎"
+              title="Search Policy"
+              className="bg-indigo-600"
             />
 
             <QuickAction
@@ -1484,7 +1466,6 @@ export default function StaffDashboardPage() {
           <div className="grid gap-4 md:grid-cols-[1fr_auto] md:items-center">
 
             <div>
-
               <p className="text-[10px] font-black uppercase tracking-[0.18em] text-slate-500">
                 Staff Account
               </p>
@@ -1498,30 +1479,23 @@ export default function StaffDashboardPage() {
 
                 {staff?.designation && (
                   <span>
-                    💼 {
-                      staff.designation
-                    }
+                    💼 {staff.designation}
                   </span>
                 )}
 
                 {staff?.department && (
                   <span>
-                    🏢 {
-                      staff.department
-                    }
+                    🏢 {staff.department}
                   </span>
                 )}
 
                 {staff?.phone && (
                   <span>
-                    📱 {
-                      staff.phone
-                    }
+                    📱 {staff.phone}
                   </span>
                 )}
 
               </div>
-
             </div>
 
             <div className="flex flex-wrap gap-2">
@@ -1555,7 +1529,7 @@ export default function StaffDashboardPage() {
         <div className="grid h-16 grid-cols-5">
 
           <Link
-            href="/staff-dashboard"
+            href="/staff/dashboard"
             className="flex flex-col items-center justify-center text-blue-700"
           >
             <span>🏠</span>
@@ -1575,15 +1549,15 @@ export default function StaffDashboardPage() {
           </Link>
 
           <Link
-            href="/customers/add"
+            href="/policies?openSearch=true"
             className="flex flex-col items-center justify-center"
           >
-            <div className="-mt-6 flex h-12 w-12 items-center justify-center rounded-full bg-blue-700 text-2xl text-white shadow-lg">
-              +
+            <div className="-mt-6 flex h-12 w-12 items-center justify-center rounded-full bg-blue-700 text-xl text-white shadow-lg">
+              🔎
             </div>
 
             <span className="text-xs">
-              Add
+              Search
             </span>
           </Link>
 

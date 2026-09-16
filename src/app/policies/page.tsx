@@ -63,6 +63,28 @@ type Policy = {
 
   createdAt?: string | null;
 
+  policyPdfUrl?: string | null;
+  vehicleRegistrationNumber?: string | null;
+  originStaffId?: string | null;
+
+  documents?: Array<{
+    id: string;
+    type: "OLD_POLICY" | "OTHER";
+    fileName: string;
+    fileUrl: string;
+    fileType?: string | null;
+    createdAt?: string | null;
+  }>;
+
+  originStaff?: {
+    id?: string;
+    staffCode?: string | null;
+    name?: string | null;
+    phone?: string | null;
+    staffRole?: string | null;
+    designation?: string | null;
+  } | null;
+
   customer?: {
     id?: string;
     customerId?: string;
@@ -288,6 +310,30 @@ export default function PoliciesPage() {
     useState(false);
 
   const [
+    accountType,
+    setAccountType,
+  ] =
+    useState("");
+
+  const [
+    loggedStaffId,
+    setLoggedStaffId,
+  ] =
+    useState("");
+
+  const [
+    loggedStaffName,
+    setLoggedStaffName,
+  ] =
+    useState("");
+
+  const [
+    showSearch,
+    setShowSearch,
+  ] =
+    useState(false);
+
+  const [
     sourceFilter,
     setSourceFilter,
   ] =
@@ -318,9 +364,84 @@ export default function PoliciesPage() {
         ) || ""
       ).trim();
 
+    const initialSearch =
+      String(
+        params.get(
+          "search"
+        ) || ""
+      ).trim();
+
+    const openSearch =
+      String(
+        params.get(
+          "openSearch"
+        ) || ""
+      )
+        .trim()
+        .toLowerCase() ===
+      "true";
+
     setSelectedCustomerId(
       customerId
     );
+
+    if (initialSearch) {
+      setSearch(
+        initialSearch
+      );
+    }
+
+    if (
+      initialSearch ||
+      openSearch
+    ) {
+      setShowSearch(
+        true
+      );
+    }
+
+    try {
+      const storedUser =
+        localStorage.getItem(
+          "agentUser"
+        );
+
+      if (storedUser) {
+        const parsed =
+          JSON.parse(
+            storedUser
+          );
+
+        setAccountType(
+          String(
+            parsed?.accountType ||
+            ""
+          ).toUpperCase()
+        );
+
+        setLoggedStaffId(
+          String(
+            parsed?.staffId ||
+            (
+              parsed?.accountType ===
+                "STAFF"
+                ? parsed?.id ||
+                  ""
+                : ""
+            )
+          )
+        );
+
+        setLoggedStaffName(
+          String(
+            parsed?.name ||
+            ""
+          )
+        );
+      }
+    } catch {
+      // Ignore local storage parsing errors.
+    }
 
     setPageReady(
       true
@@ -367,12 +488,24 @@ export default function PoliciesPage() {
           storedUser
         );
 
+      const isStaff =
+        String(
+          parsed?.accountType ||
+          ""
+        ).toUpperCase() ===
+        "STAFF";
+
+      const resolvedUserId =
+        isStaff
+          ? parsed?.userId
+          : parsed?.id;
+
       if (
-        parsed?.id
+        resolvedUserId
       ) {
         userId =
           String(
-            parsed.id
+            resolvedUserId
           );
 
         localStorage.setItem(
@@ -820,6 +953,11 @@ export default function PoliciesPage() {
               ?.name ||
             "";
 
+          const staffOwner =
+            policy.originStaff
+              ?.name ||
+            "";
+
           return [
             policy.policyNumber,
             customerName,
@@ -829,6 +967,8 @@ export default function PoliciesPage() {
             policy.productName,
             policy.policyType,
             subAgentName,
+            staffOwner,
+            policy.vehicleRegistrationNumber,
           ].some(
             (
               item
@@ -901,6 +1041,9 @@ export default function PoliciesPage() {
             <h1 className="text-2xl font-bold text-gray-900">
               {selectedCustomerId
                 ? "Customer Policies"
+                : accountType ===
+                    "STAFF"
+                ? "My Policies"
                 : "Policies"}
             </h1>
 
@@ -910,20 +1053,44 @@ export default function PoliciesPage() {
                 ? selectedCustomer?.name
                   ? `Policies for ${selectedCustomer.name}`
                   : "Policies for selected customer"
+                : accountType ===
+                    "STAFF"
+                ? loggedStaffName
+                  ? `Only policies owned by ${loggedStaffName}`
+                  : "Only policies assigned to your Staff account"
                 : "Manage your insurance policies"}
 
             </p>
 
           </div>
 
-          <Link
-            href={
-              addPolicyUrl
-            }
-            className="rounded-xl bg-blue-600 px-4 py-3 font-semibold text-white shadow-sm"
-          >
-            + Add Policy
-          </Link>
+          <div className="flex flex-wrap gap-2">
+
+            <button
+              type="button"
+              onClick={() =>
+                setShowSearch(
+                  (
+                    value
+                  ) =>
+                    !value
+                )
+              }
+              className="rounded-xl border border-blue-200 bg-white px-4 py-3 font-black text-blue-700 shadow-sm"
+            >
+              🔎 Search Policies
+            </button>
+
+            <Link
+              href={
+                addPolicyUrl
+              }
+              className="rounded-xl bg-blue-600 px-4 py-3 font-semibold text-white shadow-sm"
+            >
+              + Add Policy
+            </Link>
+
+          </div>
 
         </div>
 
@@ -1188,25 +1355,135 @@ export default function PoliciesPage() {
 
         {/* SEARCH */}
 
-        <div className="mb-5 rounded-xl bg-white p-3 shadow-sm">
+        {showSearch && (
+          <div className="mb-5 rounded-2xl border border-blue-200 bg-white p-4 shadow-sm">
 
-          <input
-            type="text"
-            value={
-              search
-            }
-            onChange={(
-              event
-            ) =>
-              setSearch(
-                event.target.value
-              )
-            }
-            placeholder="Search policy, customer, mobile, company, product or sub-agent..."
-            className="w-full rounded-lg border border-gray-300 p-3 outline-none focus:border-blue-500"
-          />
+            <div className="flex flex-wrap items-center justify-between gap-3">
 
-        </div>
+              <div>
+                <p className="text-sm font-black text-gray-900">
+                  🔎 Search Policies
+                </p>
+
+                <p className="mt-1 text-xs font-semibold text-gray-500">
+                  Search by customer name, policy number, mobile, vehicle number, company, product, Sub-Agent or Staff owner.
+                </p>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setSearch(
+                    ""
+                  );
+
+                  setShowSearch(
+                    false
+                  );
+                }}
+                className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-xs font-black text-gray-600"
+              >
+                Close
+              </button>
+
+            </div>
+
+            <div className="mt-4 flex flex-col gap-3 sm:flex-row">
+
+              <div className="relative flex-1">
+
+                <span className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-lg">
+                  🔎
+                </span>
+
+                <input
+                  type="text"
+                  value={
+                    search
+                  }
+                  onChange={(
+                    event
+                  ) =>
+                    setSearch(
+                      event.target.value
+                    )
+                  }
+                  autoFocus
+                  placeholder="Customer name / Policy no. / Vehicle no. / Mobile..."
+                  className="w-full rounded-xl border border-gray-300 py-3 pl-11 pr-4 font-semibold text-gray-900 outline-none focus:border-blue-500"
+                />
+
+              </div>
+
+              {search && (
+                <button
+                  type="button"
+                  onClick={() =>
+                    setSearch(
+                      ""
+                    )
+                  }
+                  className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-black text-red-700"
+                >
+                  Clear Search
+                </button>
+              )}
+
+            </div>
+
+            <div className="mt-3 flex flex-wrap gap-2 text-[11px] font-bold text-gray-500">
+
+              <span className="rounded-full bg-gray-100 px-3 py-1.5">
+                Customer Name
+              </span>
+
+              <span className="rounded-full bg-gray-100 px-3 py-1.5">
+                Policy Number
+              </span>
+
+              <span className="rounded-full bg-gray-100 px-3 py-1.5">
+                Vehicle Number
+              </span>
+
+              <span className="rounded-full bg-gray-100 px-3 py-1.5">
+                Mobile
+              </span>
+
+              <span className="rounded-full bg-gray-100 px-3 py-1.5">
+                Company
+              </span>
+
+              <span className="rounded-full bg-gray-100 px-3 py-1.5">
+                Product
+              </span>
+
+              <span className="rounded-full bg-gray-100 px-3 py-1.5">
+                Sub-Agent
+              </span>
+
+              <span className="rounded-full bg-gray-100 px-3 py-1.5">
+                Staff Owner
+              </span>
+
+            </div>
+
+            {search && (
+              <div className="mt-4 rounded-xl border border-blue-100 bg-blue-50 p-3">
+
+                <p className="text-sm font-black text-blue-900">
+                  {filteredPolicies.length} result
+                  {filteredPolicies.length ===
+                  1
+                    ? ""
+                    : "s"}{" "}
+                  found
+                </p>
+
+              </div>
+            )}
+
+          </div>
+        )}
 
         {/* FILTER INFO */}
 
@@ -1444,6 +1721,24 @@ export default function PoliciesPage() {
                           </div>
                         )}
 
+                        {policy.originStaff?.name && (
+                          <div className="mt-2 ml-2 inline-flex items-center rounded-lg border border-blue-200 bg-blue-50 px-3 py-1.5 text-xs font-black text-blue-800">
+                            🧑‍💼 Staff Owner:{" "}
+                            {accountType ===
+                              "STAFF" &&
+                            policy.originStaff
+                              ?.id ===
+                              loggedStaffId
+                              ? "You"
+                              : policy.originStaff
+                                  .name}
+                            {policy.originStaff
+                              .staffCode
+                              ? ` (${policy.originStaff.staffCode})`
+                              : ""}
+                          </div>
+                        )}
+
                         {/* COMPANY */}
 
                         {company && (
@@ -1620,6 +1915,151 @@ export default function PoliciesPage() {
                       days < 0 && (
                       <div className="mt-4 rounded-xl border border-red-100 bg-red-50 p-3 text-sm font-semibold text-red-700">
                         ⚠️ This policy has expired
+                      </div>
+                    )}
+
+                    {/* DOCUMENTS */}
+
+                    {(policy.policyPdfUrl ||
+                      (policy.documents &&
+                        policy.documents.length >
+                          0)) && (
+                      <div className="mt-5 rounded-2xl border border-slate-200 bg-slate-50 p-4">
+
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+
+                          <div>
+                            <p className="text-xs font-black uppercase tracking-wider text-slate-500">
+                              Policy Documents
+                            </p>
+
+                            <p className="mt-1 text-sm font-semibold text-slate-700">
+                              View or download uploaded policy files
+                            </p>
+                          </div>
+
+                          <span className="rounded-full bg-white px-3 py-1 text-xs font-black text-slate-600">
+                            {(policy.policyPdfUrl
+                              ? 1
+                              : 0) +
+                              (policy.documents
+                                ?.length ||
+                                0)}{" "}
+                            file
+                            {((policy.policyPdfUrl
+                              ? 1
+                              : 0) +
+                              (policy.documents
+                                ?.length ||
+                                0)) ===
+                            1
+                              ? ""
+                              : "s"}
+                          </span>
+
+                        </div>
+
+                        <div className="mt-3 space-y-2">
+
+                          {policy.policyPdfUrl && (
+                            <div className="flex flex-col gap-2 rounded-xl border border-white bg-white p-3 sm:flex-row sm:items-center sm:justify-between">
+
+                              <div className="min-w-0">
+                                <p className="truncate text-sm font-black text-slate-900">
+                                  📄 Main Policy Document
+                                </p>
+                                <p className="mt-1 text-xs font-semibold text-blue-700">
+                                  Policy PDF
+                                </p>
+                              </div>
+
+                              <div className="flex shrink-0 gap-2">
+                                <a
+                                  href={
+                                    policy.policyPdfUrl
+                                  }
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  className="rounded-lg bg-blue-600 px-3 py-2 text-xs font-black text-white"
+                                >
+                                  👁 View
+                                </a>
+
+                                <a
+                                  href={
+                                    policy.policyPdfUrl
+                                  }
+                                  download
+                                  className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-black text-emerald-700"
+                                >
+                                  ⬇ Download
+                                </a>
+                              </div>
+
+                            </div>
+                          )}
+
+                          {policy.documents?.map(
+                            (
+                              document
+                            ) => (
+                              <div
+                                key={
+                                  document.id
+                                }
+                                className="flex flex-col gap-2 rounded-xl border border-white bg-white p-3 sm:flex-row sm:items-center sm:justify-between"
+                              >
+
+                                <div className="min-w-0">
+                                  <p className="truncate text-sm font-black text-slate-900">
+                                    {document.type ===
+                                    "OLD_POLICY"
+                                      ? "🗂️"
+                                      : "📎"}{" "}
+                                    {
+                                      document.fileName
+                                    }
+                                  </p>
+
+                                  <p className="mt-1 text-xs font-semibold text-slate-500">
+                                    {document.type ===
+                                    "OLD_POLICY"
+                                      ? "Old Policy Copy"
+                                      : "Other Document"}
+                                  </p>
+                                </div>
+
+                                <div className="flex shrink-0 gap-2">
+                                  <a
+                                    href={
+                                      document.fileUrl
+                                    }
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    className="rounded-lg bg-blue-600 px-3 py-2 text-xs font-black text-white"
+                                  >
+                                    👁 View
+                                  </a>
+
+                                  <a
+                                    href={
+                                      document.fileUrl
+                                    }
+                                    download={
+                                      document.fileName
+                                    }
+                                    className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-black text-emerald-700"
+                                  >
+                                    ⬇ Download
+                                  </a>
+                                </div>
+
+                              </div>
+                            )
+                          )}
+
+                        </div>
+
                       </div>
                     )}
 

@@ -2,6 +2,7 @@ import crypto from "crypto";
 import fs from "fs/promises";
 import path from "path";
 import sharp from "sharp";
+import { PDFDocument } from "pdf-lib";
 
 import {
   DeleteObjectCommand,
@@ -27,8 +28,13 @@ export type UploadFolder =
 /* SETTINGS                                                                   */
 /* -------------------------------------------------------------------------- */
 
-const MAX_FILE_SIZE = 10 * 1024 * 1024;
-const COMPRESSION_THRESHOLD = 2 * 1024 * 1024;
+const MAX_FILE_SIZE =
+  10 *
+  1024 *
+  1024;
+
+const MAX_PDF_PAGES =
+  500;
 
 const ALLOWED_IMAGE_TYPES = [
   "image/jpeg",
@@ -39,24 +45,79 @@ const ALLOWED_IMAGE_TYPES = [
 ];
 
 /* -------------------------------------------------------------------------- */
-/* LARGE IMAGE SETTINGS                                                       */
+/* IMAGE SETTINGS                                                             */
 /* -------------------------------------------------------------------------- */
 
-const POSTER_MAX_WIDTH = 3000;
-const POSTER_MAX_HEIGHT = 4000;
+type ImageOptimizationSettings = {
+  width: number;
+  height: number;
+  quality: number;
+};
 
-const CUSTOMER_MAX_WIDTH = 2600;
-const CUSTOMER_MAX_HEIGHT = 3400;
+const IMAGE_SETTINGS: Record<
+  UploadFolder,
+  ImageOptimizationSettings
+> = {
+  "agent-logos": {
+    width: 1400,
+    height: 1400,
+    quality: 82,
+  },
 
-const POLICY_MAX_WIDTH = 2600;
-const POLICY_MAX_HEIGHT = 3400;
+  customers: {
+    width: 2200,
+    height: 2800,
+    quality: 80,
+  },
+
+  generated: {
+    width: 2600,
+    height: 3400,
+    quality: 84,
+  },
+
+  other: {
+    width: 2200,
+    height: 2800,
+    quality: 80,
+  },
+
+  policies: {
+    width: 2200,
+    height: 3000,
+    quality: 78,
+  },
+
+  posters: {
+    width: 2600,
+    height: 3400,
+    quality: 86,
+  },
+
+  profiles: {
+    width: 1600,
+    height: 1600,
+    quality: 82,
+  },
+
+  "sub-agents": {
+    width: 1800,
+    height: 2200,
+    quality: 80,
+  },
+};
 
 /* -------------------------------------------------------------------------- */
 /* ENV HELPERS                                                                */
 /* -------------------------------------------------------------------------- */
 
-function getRequiredEnv(key: string): string {
-  const value = process.env[key]?.trim();
+function getRequiredEnv(
+  key: string
+): string {
+  const value =
+    process.env[
+      key
+    ]?.trim();
 
   if (!value) {
     throw new Error(
@@ -73,15 +134,23 @@ function getRequiredEnv(key: string): string {
 
 function getR2BaseFolder(): string {
   const baseFolder =
-    process.env.R2_BASE_FOLDER?.trim();
+    process.env
+      .R2_BASE_FOLDER
+      ?.trim();
 
   if (!baseFolder) {
     return "";
   }
 
   return baseFolder
-    .replace(/^\/+/, "")
-    .replace(/\/+$/, "");
+    .replace(
+      /^\/+/,
+      ""
+    )
+    .replace(
+      /\/+$/,
+      ""
+    );
 }
 
 /* -------------------------------------------------------------------------- */
@@ -89,7 +158,8 @@ function getR2BaseFolder(): string {
 /* -------------------------------------------------------------------------- */
 
 function buildObjectKey(
-  folder: UploadFolder,
+  folder:
+    UploadFolder,
   fileName: string
 ): string {
   const baseFolder =
@@ -108,13 +178,19 @@ function buildObjectKey(
 
 function getR2Client(): S3Client {
   const accessKeyId =
-    getRequiredEnv("R2_ACCESS_KEY_ID");
+    getRequiredEnv(
+      "R2_ACCESS_KEY_ID"
+    );
 
   const secretAccessKey =
-    getRequiredEnv("R2_SECRET_ACCESS_KEY");
+    getRequiredEnv(
+      "R2_SECRET_ACCESS_KEY"
+    );
 
   const endpoint =
-    getRequiredEnv("R2_ENDPOINT");
+    getRequiredEnv(
+      "R2_ENDPOINT"
+    );
 
   return new S3Client({
     region: "auto",
@@ -143,7 +219,10 @@ function getR2Bucket(): string {
 function getR2PublicUrl(): string {
   return getRequiredEnv(
     "R2_PUBLIC_URL"
-  ).replace(/\/+$/, "");
+  ).replace(
+    /\/+$/,
+    ""
+  );
 }
 
 /* -------------------------------------------------------------------------- */
@@ -152,9 +231,13 @@ function getR2PublicUrl(): string {
 
 export function getUploadRoot(): string {
   const customUploadRoot =
-    process.env.UPLOAD_ROOT?.trim();
+    process.env
+      .UPLOAD_ROOT
+      ?.trim();
 
-  if (customUploadRoot) {
+  if (
+    customUploadRoot
+  ) {
     return path.resolve(
       customUploadRoot
     );
@@ -175,9 +258,11 @@ function sanitizeFileName(
   fileName: string
 ): string {
   const extension =
-    path.extname(
-      fileName
-    ).toLowerCase();
+    path
+      .extname(
+        fileName
+      )
+      .toLowerCase();
 
   const baseName =
     path
@@ -207,7 +292,8 @@ function sanitizeFileName(
 /* -------------------------------------------------------------------------- */
 
 function createUniqueFileName(
-  originalFileName: string
+  originalFileName:
+    string
 ): string {
   const cleanName =
     sanitizeFileName(
@@ -230,8 +316,12 @@ function createUniqueFileName(
 
   const random =
     crypto
-      .randomBytes(4)
-      .toString("hex");
+      .randomBytes(
+        4
+      )
+      .toString(
+        "hex"
+      );
 
   return `${baseName}-${timestamp}-${random}${extension}`;
 }
@@ -241,7 +331,48 @@ function createUniqueFileName(
 /* -------------------------------------------------------------------------- */
 
 function createWebpFileName(
-  originalFileName: string
+  originalFileName:
+    string
+): string {
+  const cleanName =
+    sanitizeFileName(
+      originalFileName
+    );
+
+  const extension =
+    path.extname(
+      cleanName
+    );
+
+  const baseName =
+    path.basename(
+      cleanName,
+      extension
+    ) ||
+    "image";
+
+  const timestamp =
+    Date.now();
+
+  const random =
+    crypto
+      .randomBytes(
+        4
+      )
+      .toString(
+        "hex"
+      );
+
+  return `${baseName}-${timestamp}-${random}.webp`;
+}
+
+/* -------------------------------------------------------------------------- */
+/* CREATE POLICY PDF NAME                                                     */
+/* -------------------------------------------------------------------------- */
+
+function createPolicyPdfFileName(
+  originalFileName:
+    string
 ): string {
   const cleanName =
     sanitizeFileName(
@@ -257,24 +388,29 @@ function createWebpFileName(
     path.basename(
       cleanName,
       originalExtension
-    ) || "image";
+    ) ||
+    "policy";
 
   const timestamp =
     Date.now();
 
   const random =
     crypto
-      .randomBytes(4)
-      .toString("hex");
+      .randomBytes(
+        4
+      )
+      .toString(
+        "hex"
+      );
 
-  return `${baseName}-${timestamp}-${random}.webp`;
+  return `${baseName}-${timestamp}-${random}.pdf`;
 }
 
 /* -------------------------------------------------------------------------- */
-/* VALIDATE FILE                                                              */
+/* VALIDATE IMAGE                                                             */
 /* -------------------------------------------------------------------------- */
 
-function validateFile(
+function validateImage(
   file: File
 ): void {
   if (!file) {
@@ -283,7 +419,10 @@ function validateFile(
     );
   }
 
-  if (file.size <= 0) {
+  if (
+    file.size <=
+    0
+  ) {
     throw new Error(
       "The uploaded file is empty."
     );
@@ -345,10 +484,18 @@ async function uploadBufferToR2(
 
   await client.send(
     new PutObjectCommand({
-      Bucket: bucket,
-      Key: objectKey,
-      Body: buffer,
-      ContentType: contentType,
+      Bucket:
+        bucket,
+
+      Key:
+        objectKey,
+
+      Body:
+        buffer,
+
+      ContentType:
+        contentType,
+
       CacheControl:
         "public, max-age=31536000, immutable",
     })
@@ -361,8 +508,10 @@ async function uploadBufferToR2(
 
 async function saveOriginalImage(
   buffer: Buffer,
-  originalFileName: string,
-  folder: UploadFolder,
+  originalFileName:
+    string,
+  folder:
+    UploadFolder,
   contentType: string
 ) {
   const fileName =
@@ -402,8 +551,10 @@ async function saveOriginalImage(
 
 async function saveWebpImage(
   buffer: Buffer,
-  originalFileName: string,
-  folder: UploadFolder
+  originalFileName:
+    string,
+  folder:
+    UploadFolder
 ) {
   const fileName =
     createWebpFileName(
@@ -437,30 +588,42 @@ async function saveWebpImage(
 }
 
 /* -------------------------------------------------------------------------- */
-/* OPTIMIZE LARGE IMAGE                                                       */
+/* OPTIMIZE IMAGE                                                             */
 /* -------------------------------------------------------------------------- */
 
-async function optimizeLargeImage(
+async function optimizeImage(
   buffer: Buffer,
-  options: {
-    width: number;
-    height: number;
-  }
+  settings:
+    ImageOptimizationSettings
 ): Promise<Buffer> {
-  return sharp(buffer)
+  return sharp(
+    buffer,
+    {
+      failOn:
+        "none",
+    }
+  )
     .rotate()
     .resize({
       width:
-        options.width,
+        settings.width,
+
       height:
-        options.height,
-      fit: "inside",
+        settings.height,
+
+      fit:
+        "inside",
+
       withoutEnlargement:
         true,
     })
     .webp({
-      quality: 96,
-      effort: 4,
+      quality:
+        settings.quality,
+
+      effort:
+        5,
+
       smartSubsample:
         true,
     })
@@ -473,14 +636,15 @@ async function optimizeLargeImage(
 
 export async function saveUploadedImage(
   file: File,
-  folder: UploadFolder
+  folder:
+    UploadFolder
 ): Promise<{
   fileName: string;
   relativePath: string;
   publicUrl: string;
   absolutePath: string;
 }> {
-  validateFile(
+  validateImage(
     file
   );
 
@@ -492,18 +656,10 @@ export async function saveUploadedImage(
       arrayBuffer
     );
 
-  if (
-    file.size <=
-    COMPRESSION_THRESHOLD
-  ) {
-    return saveOriginalImage(
-      originalBuffer,
-      file.name,
-      folder,
-      file.type ||
-        "application/octet-stream"
-    );
-  }
+  /*
+   * Animated GIFs are stored as-is.
+   * Re-encoding them as a normal image would remove animation.
+   */
 
   if (
     file.type ===
@@ -517,67 +673,21 @@ export async function saveUploadedImage(
     );
   }
 
+  const settings =
+    IMAGE_SETTINGS[
+      folder
+    ];
+
   try {
-    let optimizationSettings:
-      | {
-          width: number;
-          height: number;
-        }
-      | null = null;
-
-    if (
-      folder ===
-      "posters"
-    ) {
-      optimizationSettings = {
-        width:
-          POSTER_MAX_WIDTH,
-        height:
-          POSTER_MAX_HEIGHT,
-      };
-    }
-
-    if (
-      folder ===
-      "customers"
-    ) {
-      optimizationSettings = {
-        width:
-          CUSTOMER_MAX_WIDTH,
-        height:
-          CUSTOMER_MAX_HEIGHT,
-      };
-    }
-
-    if (
-      folder ===
-      "policies"
-    ) {
-      optimizationSettings = {
-        width:
-          POLICY_MAX_WIDTH,
-        height:
-          POLICY_MAX_HEIGHT,
-      };
-    }
-
-    if (
-      !optimizationSettings
-    ) {
-      return saveOriginalImage(
-        originalBuffer,
-        file.name,
-        folder,
-        file.type ||
-          "application/octet-stream"
-      );
-    }
-
     const optimizedBuffer =
-      await optimizeLargeImage(
+      await optimizeImage(
         originalBuffer,
-        optimizationSettings
+        settings
       );
+
+    /*
+     * Never store a larger optimized file.
+     */
 
     if (
       optimizedBuffer.length >=
@@ -597,9 +707,11 @@ export async function saveUploadedImage(
       file.name,
       folder
     );
-  } catch (error) {
+  } catch (
+    error
+  ) {
     console.error(
-      "Image optimization failed. Uploading original instead:",
+      "Image compression failed. Uploading original instead:",
       error
     );
 
@@ -610,6 +722,77 @@ export async function saveUploadedImage(
       file.type ||
         "application/octet-stream"
     );
+  }
+}
+
+/* -------------------------------------------------------------------------- */
+/* OPTIMIZE PDF                                                               */
+/* -------------------------------------------------------------------------- */
+
+async function optimizePdf(
+  inputBuffer:
+    Buffer
+): Promise<Buffer> {
+  try {
+    const pdf =
+      await PDFDocument.load(
+        inputBuffer,
+        {
+          ignoreEncryption:
+            true,
+
+          updateMetadata:
+            false,
+        }
+      );
+
+    if (
+      pdf.getPageCount() >
+      MAX_PDF_PAGES
+    ) {
+      return inputBuffer;
+    }
+
+    /*
+     * pdf-lib can reduce structural overhead and remove unused objects when
+     * rewriting the file. It does not aggressively recompress every embedded
+     * scanned image, so scanned PDFs may only shrink slightly.
+     */
+
+    const optimizedBytes =
+      await pdf.save({
+        useObjectStreams:
+          true,
+
+        addDefaultPage:
+          false,
+
+        objectsPerTick:
+          100,
+      });
+
+    const optimizedBuffer =
+      Buffer.from(
+        optimizedBytes
+      );
+
+    if (
+      optimizedBuffer.length >=
+      inputBuffer.length
+    ) {
+      return inputBuffer;
+    }
+
+    return optimizedBuffer;
+  } catch (
+    error
+  ) {
+    console.error(
+      "PDF optimization failed. Uploading original instead:",
+      error
+    );
+
+    return inputBuffer;
   }
 }
 
@@ -632,7 +815,8 @@ export async function saveUploadedPolicyPdf(
   }
 
   if (
-    file.size <= 0
+    file.size <=
+    0
   ) {
     throw new Error(
       "The uploaded PDF is empty."
@@ -648,10 +832,16 @@ export async function saveUploadedPolicyPdf(
     );
   }
 
-  if (
-    file.type !==
-    "application/pdf"
-  ) {
+  const isPdf =
+    file.type ===
+      "application/pdf" ||
+    file.name
+      .toLowerCase()
+      .endsWith(
+        ".pdf"
+      );
+
+  if (!isPdf) {
     throw new Error(
       "Only PDF files are allowed."
     );
@@ -660,37 +850,38 @@ export async function saveUploadedPolicyPdf(
   const bytes =
     await file.arrayBuffer();
 
-  const buffer =
+  const originalBuffer =
     Buffer.from(
       bytes
     );
 
   if (
-    buffer.length < 5 ||
-    buffer
+    originalBuffer.length <
+      5 ||
+    originalBuffer
       .subarray(
         0,
         5
       )
       .toString(
         "ascii"
-      ) !== "%PDF-"
+      ) !==
+      "%PDF-"
   ) {
     throw new Error(
       "The uploaded file is not a valid PDF."
     );
   }
 
-  const timestamp =
-    Date.now();
-
-  const random =
-    crypto
-      .randomBytes(4)
-      .toString("hex");
+  const optimizedBuffer =
+    await optimizePdf(
+      originalBuffer
+    );
 
   const fileName =
-    `policy-${timestamp}-${random}.pdf`;
+    createPolicyPdfFileName(
+      file.name
+    );
 
   const relativePath =
     buildObjectKey(
@@ -699,7 +890,7 @@ export async function saveUploadedPolicyPdf(
     );
 
   await uploadBufferToR2(
-    buffer,
+    optimizedBuffer,
     relativePath,
     "application/pdf"
   );
@@ -723,14 +914,14 @@ export async function saveUploadedPolicyPdf(
 /* -------------------------------------------------------------------------- */
 
 function getR2ObjectKey(
-  imageUrl: string
+  fileUrl: string
 ): string | null {
   try {
     const publicRoot =
       getR2PublicUrl();
 
     if (
-      !imageUrl.startsWith(
+      !fileUrl.startsWith(
         `${publicRoot}/`
       )
     ) {
@@ -738,7 +929,7 @@ function getR2ObjectKey(
     }
 
     const objectKey =
-      imageUrl
+      fileUrl
         .slice(
           publicRoot.length +
             1
@@ -779,13 +970,18 @@ async function deleteR2Object(
 
     await client.send(
       new DeleteObjectCommand({
-        Bucket: bucket,
-        Key: objectKey,
+        Bucket:
+          bucket,
+
+        Key:
+          objectKey,
       })
     );
 
     return true;
-  } catch (error) {
+  } catch (
+    error
+  ) {
     console.error(
       "Error deleting R2 object:",
       error
@@ -800,10 +996,10 @@ async function deleteR2Object(
 /* -------------------------------------------------------------------------- */
 
 async function deleteLegacyUploadedFile(
-  imageUrl: string
+  fileUrl: string
 ): Promise<boolean> {
   if (
-    !imageUrl.startsWith(
+    !fileUrl.startsWith(
       "/uploads/"
     )
   ) {
@@ -815,7 +1011,7 @@ async function deleteLegacyUploadedFile(
       getUploadRoot();
 
     const relativePath =
-      imageUrl
+      fileUrl
         .replace(
           /^\/uploads\//,
           ""
@@ -869,7 +1065,8 @@ async function deleteLegacyUploadedFile(
     error: unknown
   ) {
     const nodeError =
-      error as NodeJS.ErrnoException;
+      error as
+        NodeJS.ErrnoException;
 
     if (
       nodeError?.code ===
@@ -892,15 +1089,17 @@ async function deleteLegacyUploadedFile(
 /* -------------------------------------------------------------------------- */
 
 export async function deleteUploadedImage(
-  imageUrl?: string | null
+  fileUrl?:
+    | string
+    | null
 ): Promise<boolean> {
-  if (!imageUrl) {
+  if (!fileUrl) {
     return false;
   }
 
   const r2ObjectKey =
     getR2ObjectKey(
-      imageUrl
+      fileUrl
     );
 
   if (
@@ -912,12 +1111,12 @@ export async function deleteUploadedImage(
   }
 
   if (
-    imageUrl.startsWith(
+    fileUrl.startsWith(
       "/uploads/"
     )
   ) {
     return deleteLegacyUploadedFile(
-      imageUrl
+      fileUrl
     );
   }
 
@@ -929,14 +1128,16 @@ export async function deleteUploadedImage(
 /* -------------------------------------------------------------------------- */
 
 export function isUploadedFileUrl(
-  imageUrl?: string | null
+  fileUrl?:
+    | string
+    | null
 ): boolean {
-  if (!imageUrl) {
+  if (!fileUrl) {
     return false;
   }
 
   if (
-    imageUrl.startsWith(
+    fileUrl.startsWith(
       "/uploads/"
     )
   ) {
@@ -945,7 +1146,7 @@ export function isUploadedFileUrl(
 
   return Boolean(
     getR2ObjectKey(
-      imageUrl
+      fileUrl
     )
   );
 }

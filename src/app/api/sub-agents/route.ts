@@ -62,6 +62,509 @@ function cleanId(
   return text || null;
 }
 
+
+type SummaryPolicy = {
+  id: string;
+  policyType: string | null;
+  premium: unknown;
+  actualPremium: unknown;
+  customerPremium: unknown;
+  startDate: Date | null;
+  expiryDate: Date | null;
+  createdAt: Date;
+  isActive: boolean;
+  notes: string | null;
+};
+
+type SummaryCustomer = {
+  id: string;
+  createdAt: Date;
+  isActive: boolean;
+};
+
+function summaryMoney(
+  policy: SummaryPolicy
+) {
+  const value =
+    Number(
+      policy.customerPremium ??
+      policy.actualPremium ??
+      policy.premium ??
+      0
+    );
+
+  return Number.isFinite(
+    value
+  )
+    ? value
+    : 0;
+}
+
+function summaryBusinessDate(
+  policy: SummaryPolicy
+) {
+  return (
+    policy.startDate ||
+    policy.createdAt
+  );
+}
+
+function isRenewalSummaryPolicy(
+  policy: SummaryPolicy
+) {
+  const notes =
+    String(
+      policy.notes ||
+        ""
+    )
+      .trim()
+      .toLowerCase();
+
+  return (
+    notes.startsWith(
+      "renewal of previous policy"
+    ) ||
+    notes.startsWith(
+      "renewal of "
+    )
+  );
+}
+
+function buildBusinessSummary(
+  policies:
+    SummaryPolicy[],
+  customers:
+    SummaryCustomer[],
+  subAgentUpdatedAt:
+    Date
+) {
+  const now =
+    new Date();
+
+  const today =
+    new Date(
+      now.getFullYear(),
+      now.getMonth(),
+      now.getDate()
+    );
+
+  const monthStart =
+    new Date(
+      today.getFullYear(),
+      today.getMonth(),
+      1
+    );
+
+  const monthEnd =
+    new Date(
+      today.getFullYear(),
+      today.getMonth() + 1,
+      0,
+      23,
+      59,
+      59,
+      999
+    );
+
+  const fyStartYear =
+    today.getMonth() >= 3
+      ? today.getFullYear()
+      : today.getFullYear() -
+        1;
+
+  const fyStart =
+    new Date(
+      fyStartYear,
+      3,
+      1
+    );
+
+  const fyEnd =
+    new Date(
+      fyStartYear + 1,
+      2,
+      31,
+      23,
+      59,
+      59,
+      999
+    );
+
+  const in7Days =
+    new Date(
+      today
+    );
+
+  in7Days.setDate(
+    in7Days.getDate() +
+      7
+  );
+
+  const in30Days =
+    new Date(
+      today
+    );
+
+  in30Days.setDate(
+    in30Days.getDate() +
+      30
+  );
+
+  const activePolicies =
+    policies.filter(
+      (policy) =>
+        policy.isActive !==
+        false
+    );
+
+  const newBusiness =
+    policies.filter(
+      (policy) =>
+        !isRenewalSummaryPolicy(
+          policy
+        )
+    );
+
+  const renewedPolicies =
+    policies.filter(
+      (policy) =>
+        isRenewalSummaryPolicy(
+          policy
+        )
+    );
+
+  const newBusinessThisMonth =
+    newBusiness.filter(
+      (policy) => {
+        const date =
+          summaryBusinessDate(
+            policy
+          );
+
+        return (
+          date.getTime() >=
+            monthStart.getTime() &&
+          date.getTime() <=
+            monthEnd.getTime()
+        );
+      }
+    );
+
+  const newBusinessFy =
+    newBusiness.filter(
+      (policy) => {
+        const date =
+          summaryBusinessDate(
+            policy
+          );
+
+        return (
+          date.getTime() >=
+            fyStart.getTime() &&
+          date.getTime() <=
+            fyEnd.getTime()
+        );
+      }
+    );
+
+  const renewedThisMonth =
+    renewedPolicies.filter(
+      (policy) => {
+        const date =
+          summaryBusinessDate(
+            policy
+          );
+
+        return (
+          date.getTime() >=
+            monthStart.getTime() &&
+          date.getTime() <=
+            monthEnd.getTime()
+        );
+      }
+    );
+
+  const renewalDue7 =
+    activePolicies.filter(
+      (policy) =>
+        Boolean(
+          policy.expiryDate &&
+          policy.expiryDate.getTime() >=
+            today.getTime() &&
+          policy.expiryDate.getTime() <=
+            in7Days.getTime()
+        )
+    );
+
+  const renewalDue30 =
+    activePolicies.filter(
+      (policy) =>
+        Boolean(
+          policy.expiryDate &&
+          policy.expiryDate.getTime() >=
+            today.getTime() &&
+          policy.expiryDate.getTime() <=
+            in30Days.getTime()
+        )
+    );
+
+  const expiredPolicies =
+    activePolicies.filter(
+      (policy) =>
+        Boolean(
+          policy.expiryDate &&
+          policy.expiryDate.getTime() <
+            today.getTime()
+        )
+    );
+
+  const lastPolicy =
+    [...policies]
+      .sort(
+        (a, b) =>
+          summaryBusinessDate(
+            b
+          ).getTime() -
+          summaryBusinessDate(
+            a
+          ).getTime()
+      )[0];
+
+  const lastCustomer =
+    [...customers]
+      .sort(
+        (a, b) =>
+          b.createdAt.getTime() -
+          a.createdAt.getTime()
+      )[0];
+
+  const activityDates = [
+    subAgentUpdatedAt,
+    lastPolicy
+      ? summaryBusinessDate(
+          lastPolicy
+        )
+      : null,
+    lastCustomer
+      ?.createdAt ||
+      null,
+  ].filter(
+    (
+      value
+    ): value is Date =>
+      Boolean(value)
+  );
+
+  const lastActivityDate =
+    activityDates.length >
+    0
+      ? new Date(
+          Math.max(
+            ...activityDates.map(
+              (date) =>
+                date.getTime()
+            )
+          )
+        )
+      : subAgentUpdatedAt;
+
+  const portfolio = {
+    motor:
+      activePolicies.filter(
+        (policy) =>
+          String(
+            policy.policyType ||
+              ""
+          ).toUpperCase() ===
+          "MOTOR"
+      ).length,
+
+    health:
+      activePolicies.filter(
+        (policy) =>
+          String(
+            policy.policyType ||
+              ""
+          ).toUpperCase() ===
+          "HEALTH"
+      ).length,
+
+    life:
+      activePolicies.filter(
+        (policy) =>
+          String(
+            policy.policyType ||
+              ""
+          ).toUpperCase() ===
+          "LIFE"
+      ).length,
+
+    other:
+      activePolicies.filter(
+        (policy) =>
+          String(
+            policy.policyType ||
+              ""
+          ).toUpperCase() ===
+          "OTHER"
+      ).length,
+  };
+
+  return {
+    totalPolicies:
+      policies.length,
+
+    activePolicies:
+      activePolicies.length,
+
+    totalPremium:
+      policies.reduce(
+        (
+          total,
+          policy
+        ) =>
+          total +
+          summaryMoney(
+            policy
+          ),
+        0
+      ),
+
+    activePremium:
+      activePolicies.reduce(
+        (
+          total,
+          policy
+        ) =>
+          total +
+          summaryMoney(
+            policy
+          ),
+        0
+      ),
+
+    totalCustomers:
+      customers.length,
+
+    activeCustomers:
+      customers.filter(
+        (customer) =>
+          customer.isActive !==
+          false
+      ).length,
+
+    newBusinessThisMonthCount:
+      newBusinessThisMonth.length,
+
+    newBusinessThisMonthPremium:
+      newBusinessThisMonth.reduce(
+        (
+          total,
+          policy
+        ) =>
+          total +
+          summaryMoney(
+            policy
+          ),
+        0
+      ),
+
+    newBusinessFyCount:
+      newBusinessFy.length,
+
+    newBusinessFyPremium:
+      newBusinessFy.reduce(
+        (
+          total,
+          policy
+        ) =>
+          total +
+          summaryMoney(
+            policy
+          ),
+        0
+      ),
+
+    renewedThisMonthCount:
+      renewedThisMonth.length,
+
+    renewedThisMonthPremium:
+      renewedThisMonth.reduce(
+        (
+          total,
+          policy
+        ) =>
+          total +
+          summaryMoney(
+            policy
+          ),
+        0
+      ),
+
+    renewalDue7Count:
+      renewalDue7.length,
+
+    renewalDue30Count:
+      renewalDue30.length,
+
+    renewalDue30Premium:
+      renewalDue30.reduce(
+        (
+          total,
+          policy
+        ) =>
+          total +
+          summaryMoney(
+            policy
+          ),
+        0
+      ),
+
+    expiredCount:
+      expiredPolicies.length,
+
+    portfolio,
+
+    lastPolicyDate:
+      lastPolicy
+        ? summaryBusinessDate(
+            lastPolicy
+          )
+        : null,
+
+    lastCustomerDate:
+      lastCustomer
+        ?.createdAt ||
+      null,
+
+    lastActivityDate,
+
+    financialYear:
+      `FY ${fyStartYear}-${String(
+        fyStartYear + 1
+      ).slice(-2)}`,
+  };
+}
+
+const policySummarySelect = {
+  id: true,
+  policyType: true,
+  premium: true,
+  actualPremium: true,
+  customerPremium: true,
+  startDate: true,
+  expiryDate: true,
+  createdAt: true,
+  isActive: true,
+  notes: true,
+} as const;
+
+const customerSummarySelect = {
+  id: true,
+  createdAt: true,
+  isActive: true,
+} as const;
+
 /* -------------------------------------------------------------------------- */
 /* MAIN AGENT                                                                 */
 /* -------------------------------------------------------------------------- */
@@ -351,10 +854,31 @@ export async function GET(
     const { searchParams } =
       new URL(request.url);
 
-    const userId =
+    const requestedUserId =
       searchParams
         .get("userId")
         ?.trim() || "";
+
+    const session =
+      getSessionFromRequest(
+        request
+      );
+
+    const userId =
+      String(
+        session?.userId ||
+          requestedUserId ||
+          ""
+      ).trim();
+
+    const sessionStaffId =
+      session?.accountType ===
+        "STAFF"
+        ? String(
+            session.staffId ||
+              ""
+          ).trim()
+        : "";
 
     const subAgentId =
       searchParams
@@ -383,10 +907,14 @@ export async function GET(
         "activeOnly"
       ) !== "false";
 
-    const assignedStaffId =
+    const requestedAssignedStaffId =
       searchParams
         .get("assignedStaffId")
         ?.trim() || "";
+
+    const assignedStaffId =
+      sessionStaffId ||
+      requestedAssignedStaffId;
 
     const agentDirectOnly =
       searchParams.get(
@@ -434,6 +962,13 @@ export async function GET(
           where: {
             id: subAgentId,
             userId,
+
+            ...(sessionStaffId
+              ? {
+                  assignedStaffId:
+                    sessionStaffId,
+                }
+              : {}),
           },
 
           select:
@@ -474,6 +1009,41 @@ export async function GET(
             })
           : [];
 
+      const [
+        summaryPolicies,
+        summaryCustomers,
+      ] =
+        await Promise.all([
+          prisma.policy.findMany({
+            where: {
+              userId,
+              subAgentId:
+                subAgent.id,
+            },
+
+            select:
+              policySummarySelect,
+          }),
+
+          prisma.customer.findMany({
+            where: {
+              userId,
+              subAgentId:
+                subAgent.id,
+            },
+
+            select:
+              customerSummarySelect,
+          }),
+        ]);
+
+      const businessSummary =
+        buildBusinessSummary(
+          summaryPolicies,
+          summaryCustomers,
+          subAgent.updatedAt
+        );
+
       return NextResponse.json(
         {
           success: true,
@@ -487,6 +1057,8 @@ export async function GET(
                 : "AGENT_DIRECT",
 
             assignmentHistory,
+
+            businessSummary,
           },
         },
         {
@@ -796,20 +1368,93 @@ export async function GET(
         ],
       });
 
+    const subAgentIds =
+      subAgents.map(
+        (subAgent) =>
+          subAgent.id
+      );
+
+    const [
+      summaryPolicies,
+      summaryCustomers,
+    ] =
+      subAgentIds.length >
+      0
+        ? await Promise.all([
+            prisma.policy.findMany({
+              where: {
+                userId,
+                subAgentId: {
+                  in:
+                    subAgentIds,
+                },
+              },
+
+              select: {
+                ...policySummarySelect,
+                subAgentId:
+                  true,
+              },
+            }),
+
+            prisma.customer.findMany({
+              where: {
+                userId,
+                subAgentId: {
+                  in:
+                    subAgentIds,
+                },
+              },
+
+              select: {
+                ...customerSummarySelect,
+                subAgentId:
+                  true,
+              },
+            }),
+          ])
+        : [
+            [],
+            [],
+          ];
+
     return NextResponse.json(
       {
         success: true,
 
         subAgents:
           subAgents.map(
-            (subAgent) => ({
-              ...subAgent,
+            (subAgent) => {
+              const policiesForSubAgent =
+                summaryPolicies.filter(
+                  (policy) =>
+                    policy.subAgentId ===
+                    subAgent.id
+                );
 
-              assignmentType:
-                subAgent.assignedStaffId
-                  ? "STAFF"
-                  : "AGENT_DIRECT",
-            })
+              const customersForSubAgent =
+                summaryCustomers.filter(
+                  (customer) =>
+                    customer.subAgentId ===
+                    subAgent.id
+                );
+
+              return {
+                ...subAgent,
+
+                assignmentType:
+                  subAgent.assignedStaffId
+                    ? "STAFF"
+                    : "AGENT_DIRECT",
+
+                businessSummary:
+                  buildBusinessSummary(
+                    policiesForSubAgent,
+                    customersForSubAgent,
+                    subAgent.updatedAt
+                  ),
+              };
+            }
           ),
 
         count:
