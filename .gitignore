@@ -56,3 +56,37 @@ next-env.d.ts
 
 # locally uploaded user files
 /public/uploads/
+# LOCAL / GENERATED FILES - DO NOT COMMIT
+
+.vscode/
+
+# Secrets / environment
+.env
+.env.local
+.env.*.local
+document-reader/.env
+
+# Python OCR generated files
+document-reader/.venv/
+document-reader/venv/
+document-reader/__pycache__/
+document-reader/**/*.pyc
+
+# Android generated files
+android/.gradle/
+android/.idea/
+android/**/build/
+android/local.properties
+
+# Local Android backup folders
+android-main-untracked-backup-2/
+android-test-untracked-backup/
+
+# Temporary project backup / comparison files
+android-bridge-poster-page.tsx
+main-poster-page.tsx
+prisma-live-real-diff.txt
+prisma-schema-diff.txt
+prisma/schema.live-current.prisma
+prisma/schema.live-real.prisma
+src/apply-renewals-subagent-filter.ps1

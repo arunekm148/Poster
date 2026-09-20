@@ -228,6 +228,197 @@ name?: string;
 } | null;
 };
 
+
+type AutoFillDocumentType =
+| "POLICY"
+| "OLD_POLICY"
+| "RC"
+| "AADHAAR";
+
+type IntakeDocumentKind =
+| "CURRENT_POLICY"
+| "RC"
+| "OLD_POLICY"
+| "AADHAAR";
+
+type AutoFillResult = {
+documentType?:
+| "POLICY"
+| "OLD_POLICY"
+| "RC"
+| "AADHAAR"
+| "UNKNOWN";
+
+confidence?: number | null;
+
+policyType?:
+| BusinessType
+| null;
+
+policyNumber?:
+| string
+| null;
+
+previousPolicyNumber?:
+| string
+| null;
+
+companyName?:
+| string
+| null;
+
+productName?:
+| string
+| null;
+
+premium?:
+| number
+| string
+| null;
+
+sumInsured?:
+| number
+| string
+| null;
+
+startDate?:
+| string
+| null;
+
+expiryDate?:
+| string
+| null;
+
+motorVehicleClass?:
+| MotorVehicleClass
+| null;
+
+motorVehicleSubClass?:
+| string
+| null;
+
+motorCoverType?:
+| MotorCoverType
+| null;
+
+vehicleRegistrationNumber?:
+| string
+| null;
+
+vehicleMake?:
+| string
+| null;
+
+vehicleModel?:
+| string
+| null;
+
+vehicleYear?:
+| number
+| string
+| null;
+
+vehicleIdv?:
+| number
+| string
+| null;
+
+vehicleNcbPercent?:
+| number
+| string
+| null;
+
+ownerName?:
+| string
+| null;
+
+engineNumber?:
+| string
+| null;
+
+chassisNumber?:
+| string
+| null;
+
+fuelType?:
+| string
+| null;
+
+aadhaarName?:
+| string
+| null;
+
+aadhaarDob?:
+| string
+| null;
+
+aadhaarYearOfBirth?:
+| string
+| number
+| null;
+
+aadhaarGender?:
+| string
+| null;
+
+aadhaarAddress?:
+| string
+| null;
+
+aadhaarLast4?:
+| string
+| null;
+
+remarks?: string[];
+detectedFields?: string[];
+};
+
+type IntakeReadResult = {
+kind: IntakeDocumentKind;
+fileName: string;
+result?: AutoFillResult;
+error?: string;
+};
+
+type ReviewTarget =
+| "policyType"
+| "policyNumber"
+| "companyName"
+| "productName"
+| "premium"
+| "sumInsured"
+| "startDate"
+| "expiryDate"
+| "motorVehicleClass"
+| "motorVehicleSubClass"
+| "motorCoverType"
+| "vehicleRegistrationNumber"
+| "vehicleMake"
+| "vehicleModel"
+| "vehicleYear"
+| "vehicleIdv"
+| "vehicleNcbPercent"
+| "previousInsurerName"
+| "previousPolicyNumber"
+| "previousSumInsured"
+| "previousPolicyExpiry";
+
+type ReviewAlternative = {
+source: string;
+value: string;
+};
+
+type ReviewItem = {
+id: string;
+label: string;
+target?: ReviewTarget;
+value: string;
+source: string;
+selected: boolean;
+applyable: boolean;
+alternatives?: ReviewAlternative[];
+};
+
 /* -------------------------------------------------------------------------- */
 /* HELPERS */
 /* -------------------------------------------------------------------------- */
@@ -1150,6 +1341,51 @@ uploadingDocuments,
 setUploadingDocuments,
 ] = useState(false);
 
+
+/* ------------------------------------------------------------------------ */
+/* DOCUMENT INTAKE / LOCAL AUTO FILL */
+/* ------------------------------------------------------------------------ */
+
+const [
+intakeFiles,
+setIntakeFiles,
+] = useState<
+Record<
+IntakeDocumentKind,
+File | null
+>
+>({
+CURRENT_POLICY: null,
+RC: null,
+OLD_POLICY: null,
+AADHAAR: null,
+});
+
+const [
+intakeResults,
+setIntakeResults,
+] = useState<IntakeReadResult[]>([]);
+
+const [
+reviewItems,
+setReviewItems,
+] = useState<ReviewItem[]>([]);
+
+const [
+intakeReading,
+setIntakeReading,
+] = useState(false);
+
+const [
+intakeStatus,
+setIntakeStatus,
+] = useState("");
+
+const [
+intakeInputVersion,
+setIntakeInputVersion,
+] = useState(0);
+
 /* ------------------------------------------------------------------------ */
 /* STATUS */
 /* ------------------------------------------------------------------------ */
@@ -1555,6 +1791,42 @@ true;
 };
 }, [
 userId,
+]);
+
+
+/* ------------------------------------------------------------------------ */
+/* CONNECT AUTO-FILLED COMPANY NAME TO COMPANY MASTER */
+/* ------------------------------------------------------------------------ */
+
+useEffect(() => {
+if (
+!companyName.trim() ||
+companyId ||
+companies.length === 0
+) {
+return;
+}
+
+const matching =
+companies.find(
+company =>
+company.name
+.trim()
+.toLowerCase() ===
+companyName
+.trim()
+.toLowerCase()
+);
+
+if (matching) {
+setCompanyId(
+matching.id
+);
+}
+}, [
+companies,
+companyName,
+companyId,
 ]);
 
 /* ------------------------------------------------------------------------ */
@@ -2857,6 +3129,894 @@ setExpiryDate(
 ""
 );
 }
+}
+
+
+/* ------------------------------------------------------------------------ */
+/* DOCUMENT INTAKE / LOCAL AUTO FILL */
+/* ------------------------------------------------------------------------ */
+
+const INTAKE_LABELS: Record<
+IntakeDocumentKind,
+string
+> = {
+CURRENT_POLICY: "Current Policy",
+RC: "RC Book / RC Card",
+OLD_POLICY: "Old Policy",
+AADHAAR: "Aadhaar / KYC",
+};
+
+function readerDocumentType(
+kind: IntakeDocumentKind
+): AutoFillDocumentType {
+if (kind === "CURRENT_POLICY") {
+return "POLICY";
+}
+
+if (kind === "OLD_POLICY") {
+return "OLD_POLICY";
+}
+
+if (kind === "AADHAAR") {
+return "AADHAAR";
+}
+
+return "RC";
+}
+
+function handleIntakeFileChange(
+kind: IntakeDocumentKind,
+event: ChangeEvent<HTMLInputElement>
+) {
+setError("");
+setIntakeStatus("");
+setIntakeResults([]);
+setReviewItems([]);
+
+const file =
+event.target.files?.[0];
+
+if (!file) {
+setIntakeFiles(
+previous => ({
+...previous,
+[kind]: null,
+})
+);
+return;
+}
+
+const validationError =
+validateOptionalDocumentFile(
+file
+);
+
+if (validationError) {
+setError(validationError);
+event.target.value = "";
+return;
+}
+
+setIntakeFiles(
+previous => ({
+...previous,
+[kind]: file,
+})
+);
+}
+
+function removeIntakeFile(
+kind: IntakeDocumentKind
+) {
+setIntakeFiles(
+previous => ({
+...previous,
+[kind]: null,
+})
+);
+setIntakeResults(
+previous =>
+previous.filter(
+item => item.kind !== kind
+)
+);
+setReviewItems([]);
+setIntakeStatus("");
+setIntakeInputVersion(
+value => value + 1
+);
+}
+
+function normalizeAutoFillDate(
+value?: string | null
+) {
+const text = String(
+value || ""
+).trim();
+
+if (!text) {
+return "";
+}
+
+if (
+/^\d{4}-\d{2}-\d{2}$/.test(
+text
+)
+) {
+return text;
+}
+
+const parsed = new Date(text);
+
+if (
+Number.isNaN(
+parsed.getTime()
+)
+) {
+return "";
+}
+
+return [
+parsed.getUTCFullYear(),
+String(
+parsed.getUTCMonth() + 1
+).padStart(2, "0"),
+String(
+parsed.getUTCDate()
+).padStart(2, "0"),
+].join("-");
+}
+
+function normalizeAutoFillBusinessType(
+value?: string | null
+): BusinessType | "" {
+const upper = String(
+value || ""
+)
+.trim()
+.toUpperCase();
+
+if (
+upper === "HEALTH" ||
+upper === "MOTOR" ||
+upper === "LIFE" ||
+upper === "OTHER"
+) {
+return upper as BusinessType;
+}
+
+return "";
+}
+
+function normalizeMotorVehicleClass(
+value?: string | null
+): MotorVehicleClass {
+const upper = String(
+value || ""
+)
+.trim()
+.toUpperCase();
+
+if (
+upper === "TWO_WHEELER" ||
+upper === "PRIVATE_CAR" ||
+upper === "PASSENGER_CARRYING" ||
+upper === "GOODS_CARRYING" ||
+upper === "MISC_SPECIAL"
+) {
+return upper as MotorVehicleClass;
+}
+
+return "";
+}
+
+function normalizeMotorCoverType(
+value?: string | null
+): MotorCoverType {
+const upper = String(
+value || ""
+)
+.trim()
+.toUpperCase();
+
+if (
+upper === "COMPREHENSIVE" ||
+upper === "THIRD_PARTY" ||
+upper === "STANDALONE_OD" ||
+upper === "STANDARD"
+) {
+return upper as MotorCoverType;
+}
+
+return "";
+}
+
+function addFileToOtherDocuments(
+file: File
+) {
+setOtherDocumentFiles(
+previous => {
+const exists = previous.some(
+item =>
+item.name === file.name &&
+item.size === file.size &&
+item.lastModified === file.lastModified
+);
+
+if (exists) {
+return previous;
+}
+
+return [
+...previous,
+file,
+].slice(0, 20);
+}
+);
+}
+
+function addFileToOldPolicyDocuments(
+file: File
+) {
+setOldPolicyFiles(
+previous => {
+const exists = previous.some(
+item =>
+item.name === file.name &&
+item.size === file.size &&
+item.lastModified === file.lastModified
+);
+
+if (exists) {
+return previous;
+}
+
+return [
+...previous,
+file,
+].slice(0, 20);
+}
+);
+}
+
+function valueText(
+value: unknown
+) {
+if (
+value === null ||
+value === undefined
+) {
+return "";
+}
+
+return String(value).trim();
+}
+
+function buildReviewItems(
+results: IntakeReadResult[]
+): ReviewItem[] {
+type Candidate = {
+label: string;
+target?: ReviewTarget;
+value: string;
+source: string;
+priority: number;
+selected: boolean;
+applyable: boolean;
+};
+
+const candidates =
+new Map<string, Candidate[]>();
+
+function addCandidate(
+key: string,
+label: string,
+target: ReviewTarget | undefined,
+value: unknown,
+source: string,
+priority: number,
+selected = true,
+applyable = true
+) {
+const text = valueText(value);
+if (!text) {
+return;
+}
+
+const list =
+candidates.get(key) || [];
+
+list.push({
+label,
+target,
+value: text,
+source,
+priority,
+selected,
+applyable,
+});
+
+candidates.set(key, list);
+}
+
+for (const item of results) {
+if (!item.result || item.error) {
+continue;
+}
+
+const r = item.result;
+const source = INTAKE_LABELS[item.kind];
+
+if (item.kind === "CURRENT_POLICY") {
+addCandidate("policyType", "Insurance Type", "policyType", r.policyType, source, 120);
+addCandidate("policyNumber", "Policy Number", "policyNumber", r.policyNumber, source, 120);
+addCandidate("companyName", "Insurance Company", "companyName", r.companyName, source, 120);
+addCandidate("productName", "Product / Plan", "productName", r.productName, source, 120);
+addCandidate("premium", "Premium", "premium", r.premium, source, 120);
+addCandidate("sumInsured", "Sum Insured / Assured", "sumInsured", r.sumInsured, source, 120);
+addCandidate("startDate", "Policy Start Date", "startDate", r.startDate, source, 120);
+addCandidate("expiryDate", "Policy Expiry Date", "expiryDate", r.expiryDate, source, 120);
+addCandidate("motorCoverType", "Motor Cover Type", "motorCoverType", r.motorCoverType, source, 120);
+addCandidate("vehicleRegistrationNumber", "Registration Number", "vehicleRegistrationNumber", r.vehicleRegistrationNumber, source, 100);
+addCandidate("vehicleMake", "Vehicle Make", "vehicleMake", r.vehicleMake, source, 100);
+addCandidate("vehicleModel", "Vehicle Model", "vehicleModel", r.vehicleModel, source, 100);
+addCandidate("vehicleYear", "Manufacturing Year", "vehicleYear", r.vehicleYear, source, 100);
+addCandidate("motorVehicleClass", "Vehicle Classification", "motorVehicleClass", r.motorVehicleClass, source, 100);
+addCandidate("motorVehicleSubClass", "Vehicle Sub-Class", "motorVehicleSubClass", r.motorVehicleSubClass, source, 100);
+addCandidate("vehicleIdv", "Vehicle IDV", "vehicleIdv", r.vehicleIdv, source, 120);
+addCandidate("vehicleNcbPercent", "NCB %", "vehicleNcbPercent", r.vehicleNcbPercent, source, 120);
+addCandidate("ownerName", "Insured / Owner Name", undefined, r.ownerName, source, 50, false, false);
+addCandidate("engineNumber", "Engine Number", undefined, r.engineNumber, source, 50, false, false);
+addCandidate("chassisNumber", "Chassis Number", undefined, r.chassisNumber, source, 50, false, false);
+addCandidate("fuelType", "Fuel Type", undefined, r.fuelType, source, 50, false, false);
+}
+
+if (item.kind === "RC") {
+addCandidate("vehicleRegistrationNumber", "Registration Number", "vehicleRegistrationNumber", r.vehicleRegistrationNumber, source, 140);
+addCandidate("vehicleMake", "Vehicle Make", "vehicleMake", r.vehicleMake, source, 140);
+addCandidate("vehicleModel", "Vehicle Model", "vehicleModel", r.vehicleModel, source, 140);
+addCandidate("vehicleYear", "Manufacturing Year", "vehicleYear", r.vehicleYear, source, 140);
+addCandidate("motorVehicleClass", "Vehicle Classification", "motorVehicleClass", r.motorVehicleClass, source, 140);
+addCandidate("motorVehicleSubClass", "Vehicle Sub-Class", "motorVehicleSubClass", r.motorVehicleSubClass, source, 140);
+addCandidate("ownerName", "Registered Owner", undefined, r.ownerName, source, 80, false, false);
+addCandidate("engineNumber", "Engine Number", undefined, r.engineNumber, source, 80, false, false);
+addCandidate("chassisNumber", "Chassis Number", undefined, r.chassisNumber, source, 80, false, false);
+addCandidate("fuelType", "Fuel Type", undefined, r.fuelType, source, 80, false, false);
+}
+
+if (item.kind === "OLD_POLICY") {
+addCandidate("previousInsurerName", "Previous Insurer", "previousInsurerName", r.companyName, source, 120, false);
+addCandidate("previousPolicyNumber", "Previous Policy Number", "previousPolicyNumber", r.policyNumber, source, 120, false);
+addCandidate("previousPolicyExpiry", "Previous Policy Expiry", "previousPolicyExpiry", r.expiryDate, source, 120, false);
+addCandidate(
+"previousSumInsured",
+"Previous Sum Insured / IDV",
+"previousSumInsured",
+r.sumInsured ?? r.vehicleIdv,
+source,
+120,
+false
+);
+
+/*
+ * Old-policy NCB is often needed during renewal.
+ * Use it only when the current policy did not provide NCB.
+ */
+addCandidate("vehicleNcbPercent", "NCB %", "vehicleNcbPercent", r.vehicleNcbPercent, source, 70, false);
+addCandidate("oldPolicyReference", "Old Policy Reference", undefined, r.policyNumber, source, 40, false, false);
+addCandidate("oldPolicyIdv", "Old Policy IDV", undefined, r.vehicleIdv, source, 40, false, false);
+}
+
+if (item.kind === "AADHAAR") {
+addCandidate("aadhaarName", "Aadhaar Name", undefined, r.aadhaarName || r.ownerName, source, 100, false, false);
+addCandidate("aadhaarDob", "Aadhaar Date of Birth", undefined, r.aadhaarDob, source, 100, false, false);
+addCandidate("aadhaarYearOfBirth", "Aadhaar Year of Birth", undefined, r.aadhaarYearOfBirth, source, 100, false, false);
+addCandidate("aadhaarGender", "Aadhaar Gender", undefined, r.aadhaarGender, source, 100, false, false);
+addCandidate("aadhaarAddress", "Aadhaar Address", undefined, r.aadhaarAddress, source, 100, false, false);
+addCandidate(
+"aadhaarLast4",
+"Aadhaar (last 4 only)",
+undefined,
+r.aadhaarLast4 ? `XXXX XXXX ${r.aadhaarLast4}` : "",
+source,
+100,
+false,
+false
+);
+}
+}
+
+const review: ReviewItem[] = [];
+
+for (const [key, list] of candidates.entries()) {
+const ordered = [...list].sort(
+(a, b) => b.priority - a.priority
+);
+const chosen = ordered[0];
+const alternatives = ordered
+.slice(1)
+.filter(item => item.value !== chosen.value)
+.map(item => ({
+source: item.source,
+value: item.value,
+}));
+
+review.push({
+id: key,
+label: chosen.label,
+target: chosen.target,
+value: chosen.value,
+source: chosen.source,
+selected:
+chosen.applyable &&
+chosen.selected,
+applyable: chosen.applyable,
+alternatives,
+});
+}
+
+const order: string[] = [
+"policyType",
+"policyNumber",
+"companyName",
+"productName",
+"premium",
+"sumInsured",
+"startDate",
+"expiryDate",
+"vehicleRegistrationNumber",
+"vehicleMake",
+"vehicleModel",
+"vehicleYear",
+"motorVehicleClass",
+"motorVehicleSubClass",
+"motorCoverType",
+"vehicleIdv",
+"vehicleNcbPercent",
+"previousInsurerName",
+"previousPolicyNumber",
+"previousPolicyExpiry",
+"previousSumInsured",
+"ownerName",
+"engineNumber",
+"chassisNumber",
+"fuelType",
+"aadhaarName",
+"aadhaarDob",
+"aadhaarYearOfBirth",
+"aadhaarGender",
+"aadhaarAddress",
+"aadhaarLast4",
+"oldPolicyReference",
+"oldPolicyIdv",
+];
+
+return review.sort(
+(a, b) =>
+order.indexOf(a.id) -
+order.indexOf(b.id)
+);
+}
+
+async function readAllIntakeDocuments() {
+if (intakeReading) {
+return;
+}
+
+const selected = (
+Object.entries(intakeFiles) as Array<[
+IntakeDocumentKind,
+File | null
+]>
+).filter(
+(
+entry
+): entry is [
+IntakeDocumentKind,
+File
+] => Boolean(entry[1])
+);
+
+if (selected.length === 0) {
+setError(
+"Please select at least one document, or skip this section and enter the policy manually."
+);
+return;
+}
+
+try {
+setIntakeReading(true);
+setError("");
+setIntakeStatus(
+`Reading ${selected.length} document${selected.length === 1 ? "" : "s"} locally...`
+);
+
+const completed: IntakeReadResult[] = [];
+
+/*
+ * Read sequentially so normal office computers are not overloaded
+ * when multiple scanned documents require OCR.
+ */
+for (const [kind, file] of selected) {
+setIntakeStatus(
+`Reading ${INTAKE_LABELS[kind]}...`
+);
+
+try {
+const formData = new FormData();
+formData.append("file", file);
+formData.append(
+"documentType",
+readerDocumentType(kind)
+);
+
+const response = await fetch(
+"/api/policy-autofill",
+{
+method: "POST",
+body: formData,
+}
+);
+
+const data = await response
+.json()
+.catch(() => ({}));
+
+if (
+!response.ok ||
+!data.success
+) {
+throw new Error(
+data.message ||
+`Unable to read ${INTAKE_LABELS[kind]}.`
+);
+}
+
+completed.push({
+kind,
+fileName: file.name,
+result:
+data.data ||
+data.result ||
+{},
+});
+} catch (documentError) {
+completed.push({
+kind,
+fileName: file.name,
+error:
+documentError instanceof Error
+? documentError.message
+: `Unable to read ${INTAKE_LABELS[kind]}.`,
+});
+}
+}
+
+setIntakeResults(completed);
+
+const review =
+buildReviewItems(completed);
+setReviewItems(review);
+
+const successCount =
+completed.filter(
+item => item.result && !item.error
+).length;
+
+const failedCount =
+completed.length - successCount;
+
+setIntakeStatus(
+failedCount > 0
+? `Read ${successCount} document${successCount === 1 ? "" : "s"}. ${failedCount} document${failedCount === 1 ? "" : "s"} could not be read. Review the available values below.`
+: `✓ Read ${successCount} document${successCount === 1 ? "" : "s"}. Review or edit the detected values, then apply the selected fields.`
+);
+} finally {
+setIntakeReading(false);
+}
+}
+
+function updateReviewValue(
+id: string,
+value: string
+) {
+setReviewItems(
+previous =>
+previous.map(
+item =>
+item.id === id
+? {
+...item,
+value,
+}
+: item
+)
+);
+}
+
+function toggleReviewItem(
+id: string
+) {
+setReviewItems(
+previous =>
+previous.map(
+item =>
+item.id === id &&
+item.applyable
+? {
+...item,
+selected: !item.selected,
+}
+: item
+)
+);
+}
+
+function setAllReviewSelections(
+selected: boolean
+) {
+setReviewItems(
+previous =>
+previous.map(
+item =>
+item.applyable
+? {
+...item,
+selected,
+}
+: item
+)
+);
+}
+
+function applyReviewValue(
+item: ReviewItem
+) {
+if (
+!item.target ||
+!item.selected ||
+!item.applyable
+) {
+return;
+}
+
+const value = item.value.trim();
+if (!value) {
+return;
+}
+
+switch (item.target) {
+case "policyType": {
+const normalized =
+normalizeAutoFillBusinessType(
+value
+);
+if (normalized) {
+handlePolicyTypeChange(
+normalized
+);
+}
+break;
+}
+
+case "policyNumber":
+setPolicyNumber(value);
+break;
+
+case "companyName": {
+setCompanyName(value);
+const matching =
+companies.find(
+company =>
+company.name
+.trim()
+.toLowerCase() ===
+value.toLowerCase()
+);
+if (matching) {
+setCompanyId(matching.id);
+}
+break;
+}
+
+case "productName":
+setProductName(value);
+break;
+
+case "premium":
+setPremium(value);
+break;
+
+case "sumInsured":
+setSumInsured(value);
+break;
+
+case "startDate": {
+const date =
+normalizeAutoFillDate(value);
+if (date) {
+setPolicyTenure("MANUAL");
+setStartDate(date);
+}
+break;
+}
+
+case "expiryDate": {
+const date =
+normalizeAutoFillDate(value);
+if (date) {
+setPolicyTenure("MANUAL");
+setExpiryDate(date);
+}
+break;
+}
+
+case "motorVehicleClass": {
+const normalized =
+normalizeMotorVehicleClass(
+value
+);
+if (normalized) {
+setMotorVehicleClass(normalized);
+}
+break;
+}
+
+case "motorVehicleSubClass":
+setMotorVehicleSubClass(value);
+break;
+
+case "motorCoverType": {
+const normalized =
+normalizeMotorCoverType(
+value
+);
+if (normalized) {
+setMotorCoverType(normalized);
+}
+break;
+}
+
+case "vehicleRegistrationNumber":
+setVehicleRegistrationNumber(
+value.toUpperCase()
+);
+break;
+
+case "vehicleMake":
+setVehicleMake(value);
+break;
+
+case "vehicleModel":
+setVehicleModel(value);
+break;
+
+case "vehicleYear":
+setVehicleYear(value);
+break;
+
+case "vehicleIdv":
+setVehicleIdv(value);
+break;
+
+case "vehicleNcbPercent":
+setVehicleNcbPercent(value);
+break;
+
+case "previousInsurerName":
+setPreviousInsurerName(value);
+break;
+
+case "previousPolicyNumber":
+setPreviousPolicyNumber(value);
+break;
+
+case "previousSumInsured":
+setPreviousSumInsured(value);
+break;
+
+case "previousPolicyExpiry": {
+const date =
+normalizeAutoFillDate(value);
+if (date) {
+setPreviousPolicyExpiry(date);
+}
+break;
+}
+}
+}
+
+function attachIntakeDocuments() {
+const currentPolicy =
+intakeFiles.CURRENT_POLICY;
+
+if (currentPolicy) {
+const isPdf =
+currentPolicy.type ===
+"application/pdf" ||
+currentPolicy.name
+.toLowerCase()
+.endsWith(".pdf");
+
+if (isPdf) {
+setPolicyPdf(currentPolicy);
+setPolicyPdfUrl("");
+} else {
+addFileToOtherDocuments(
+currentPolicy
+);
+}
+}
+
+if (intakeFiles.RC) {
+addFileToOtherDocuments(
+intakeFiles.RC
+);
+}
+
+if (intakeFiles.AADHAAR) {
+addFileToOtherDocuments(
+intakeFiles.AADHAAR
+);
+}
+
+if (intakeFiles.OLD_POLICY) {
+addFileToOldPolicyDocuments(
+intakeFiles.OLD_POLICY
+);
+}
+}
+
+function applySelectedReviewValues() {
+const selected = reviewItems.filter(
+item =>
+item.applyable &&
+item.selected
+);
+
+/*
+ * Apply insurance type first because changing type clears
+ * category-specific fields in the existing manual form.
+ */
+const typeItem = selected.find(
+item => item.target === "policyType"
+);
+
+if (typeItem) {
+applyReviewValue(typeItem);
+}
+
+for (const item of selected) {
+if (item.target === "policyType") {
+continue;
+}
+applyReviewValue(item);
+}
+
+attachIntakeDocuments();
+
+setIntakeStatus(
+"✓ Selected values have been applied. All normal fields remain editable, and the selected documents will be attached when you save the policy."
+);
+
+setSuccess(
+"Document values applied. Please verify or manually edit any field before saving."
+);
+}
+
+function clearDocumentIntake() {
+setIntakeFiles({
+CURRENT_POLICY: null,
+RC: null,
+OLD_POLICY: null,
+AADHAAR: null,
+});
+setIntakeResults([]);
+setReviewItems([]);
+setIntakeStatus("");
+setIntakeInputVersion(
+value => value + 1
+);
 }
 
 /* ------------------------------------------------------------------------ */
@@ -4538,6 +5698,341 @@ className="mt-3 inline-block font-bold text-blue-600"
 
 </>
 )}
+
+</section>
+
+
+{/* DOCUMENT INTAKE / LOCAL AUTO FILL */}
+
+<section className={sectionClass}>
+
+<div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+
+<div className="flex items-start gap-3">
+
+<div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-violet-50 text-xl">
+✨
+</div>
+
+<div>
+<h2 className="text-lg font-black text-slate-900">
+Document Intake & Auto Fill
+</h2>
+
+<p className="mt-1 text-xs font-semibold leading-5 text-slate-500">
+Optional helper. Upload one or more documents, read them together, review the detected values, then choose what to apply.
+</p>
+</div>
+
+</div>
+
+<button
+type="button"
+onClick={clearDocumentIntake}
+className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-xs font-black text-slate-600 shadow-sm transition hover:bg-slate-50"
+>
+Clear Intake
+</button>
+
+</div>
+
+<div className="mt-4 rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-sm font-semibold leading-6 text-emerald-800">
+✍️ <span className="font-black">Manual entry always remains available.</span> You can skip this entire section, or apply detected values and then edit any normal field manually before saving.
+</div>
+
+<div className="mt-5 grid gap-4 md:grid-cols-2">
+
+<DocumentIntakeCard
+inputKey={`current-${intakeInputVersion}`}
+icon="📄"
+title="Current Policy"
+description="Current issued policy PDF or image. Best source for policy number, insurer, premium, IDV, dates and cover type."
+file={intakeFiles.CURRENT_POLICY}
+onChange={event =>
+handleIntakeFileChange(
+"CURRENT_POLICY",
+event
+)
+}
+onRemove={() =>
+removeIntakeFile(
+"CURRENT_POLICY"
+)
+}
+/>
+
+<DocumentIntakeCard
+inputKey={`rc-${intakeInputVersion}`}
+icon="🚗"
+title="RC Book / RC Card"
+description="Best source for registration number, make, model, year, engine, chassis, fuel and vehicle class."
+file={intakeFiles.RC}
+onChange={event =>
+handleIntakeFileChange(
+"RC",
+event
+)
+}
+onRemove={() =>
+removeIntakeFile(
+"RC"
+)
+}
+/>
+
+<DocumentIntakeCard
+inputKey={`old-${intakeInputVersion}`}
+icon="🗂️"
+title="Old Policy"
+description="Optional. Reads previous insurer, policy number, expiry, old IDV / sum insured and NCB when available."
+file={intakeFiles.OLD_POLICY}
+onChange={event =>
+handleIntakeFileChange(
+"OLD_POLICY",
+event
+)
+}
+onRemove={() =>
+removeIntakeFile(
+"OLD_POLICY"
+)
+}
+/>
+
+<DocumentIntakeCard
+inputKey={`aadhaar-${intakeInputVersion}`}
+icon="🪪"
+title="Aadhaar / KYC"
+description="Optional identity check. The reader returns only useful KYC fields and the last 4 Aadhaar digits, never the full Aadhaar number."
+file={intakeFiles.AADHAAR}
+onChange={event =>
+handleIntakeFileChange(
+"AADHAAR",
+event
+)
+}
+onRemove={() =>
+removeIntakeFile(
+"AADHAAR"
+)
+}
+/>
+
+</div>
+
+<div className="mt-5 flex flex-col gap-3 rounded-2xl border border-violet-100 bg-gradient-to-br from-violet-50 to-blue-50 p-4 sm:flex-row sm:items-center sm:justify-between">
+
+<div>
+<p className="text-sm font-black text-slate-900">
+{
+Object.values(
+intakeFiles
+).filter(Boolean).length
+} document(s) selected
+</p>
+<p className="mt-1 text-xs font-semibold text-slate-500">
+Documents are read locally by the Agents India document reader.
+</p>
+</div>
+
+<button
+type="button"
+onClick={readAllIntakeDocuments}
+disabled={
+intakeReading ||
+Object.values(
+intakeFiles
+).every(
+file => !file
+)
+}
+className="rounded-xl bg-gradient-to-r from-violet-600 to-blue-600 px-5 py-3 text-sm font-black text-white shadow-md transition hover:shadow-lg disabled:cursor-not-allowed disabled:opacity-50"
+>
+{intakeReading
+? "Reading Documents..."
+: "✨ Read All Documents"}
+</button>
+
+</div>
+
+{intakeStatus && (
+<div className="mt-4 rounded-2xl border border-blue-200 bg-blue-50 p-4 text-sm font-bold leading-6 text-blue-800">
+{intakeStatus}
+</div>
+)}
+
+{intakeResults.length > 0 && (
+<div className="mt-5 grid gap-3 sm:grid-cols-2">
+{intakeResults.map(
+item => (
+<div
+key={`${item.kind}-${item.fileName}`}
+className={`rounded-2xl border p-4 ${
+item.error
+? "border-red-200 bg-red-50"
+: "border-emerald-200 bg-emerald-50"
+}`}
+>
+<p className="text-xs font-black uppercase tracking-[0.1em] text-slate-500">
+{INTAKE_LABELS[item.kind]}
+</p>
+<p className="mt-1 truncate text-sm font-black text-slate-900">
+{item.fileName}
+</p>
+
+{item.error ? (
+<p className="mt-2 text-xs font-bold text-red-700">
+⚠️ {item.error}
+</p>
+) : (
+<>
+<p className="mt-2 text-xs font-bold text-emerald-700">
+✓ Read successfully
+</p>
+{typeof item.result?.confidence === "number" && (
+<p className="mt-1 text-xs font-semibold text-slate-500">
+Reader confidence: {Math.round(item.result.confidence * 100)}%
+</p>
+)}
+</>
+)}
+</div>
+)
+)}
+</div>
+)}
+
+{reviewItems.length > 0 && (
+<div className="mt-6 overflow-hidden rounded-2xl border border-slate-200 bg-white">
+
+<div className="border-b border-slate-200 bg-slate-50 p-4 sm:flex sm:items-center sm:justify-between sm:gap-4">
+<div>
+<p className="text-xs font-black uppercase tracking-[0.12em] text-violet-700">
+Review Before Applying
+</p>
+<h3 className="mt-1 font-black text-slate-900">
+Confirm or edit detected values
+</h3>
+<p className="mt-1 text-xs font-semibold text-slate-500">
+Only checked rows are copied into the policy form. Reference-only rows remain visible for checking.
+</p>
+</div>
+
+<div className="mt-3 flex gap-2 sm:mt-0">
+<button
+type="button"
+onClick={() =>
+setAllReviewSelections(true)
+}
+className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-black text-blue-700"
+>
+Select All
+</button>
+<button
+type="button"
+onClick={() =>
+setAllReviewSelections(false)
+}
+className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-black text-slate-600"
+>
+Deselect
+</button>
+</div>
+</div>
+
+<div className="divide-y divide-slate-100">
+{reviewItems.map(
+item => (
+<div
+key={item.id}
+className="grid gap-3 p-4 lg:grid-cols-[36px_180px_minmax(220px,1fr)_170px] lg:items-start"
+>
+<div className="pt-2">
+{item.applyable ? (
+<input
+type="checkbox"
+checked={item.selected}
+onChange={() =>
+toggleReviewItem(
+item.id
+)
+}
+className="h-5 w-5 rounded border-slate-300"
+/>
+) : (
+<span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-slate-100 text-xs">
+👁
+</span>
+)}
+</div>
+
+<div>
+<p className="text-xs font-black text-slate-700">
+{item.label}
+</p>
+<p className="mt-1 text-[10px] font-bold uppercase tracking-wide text-slate-400">
+{item.applyable
+? "Can apply"
+: "Reference only"}
+</p>
+</div>
+
+<div>
+<input
+value={item.value}
+onChange={event =>
+updateReviewValue(
+item.id,
+event.target.value
+)
+}
+readOnly={!item.applyable}
+className={`w-full rounded-xl border px-3 py-2 text-sm font-bold outline-none ${
+item.applyable
+? "border-slate-300 bg-white focus:border-blue-500"
+: "border-slate-200 bg-slate-50 text-slate-600"
+}`}
+/>
+
+{item.alternatives &&
+item.alternatives.length > 0 && (
+<div className="mt-2 rounded-lg border border-amber-200 bg-amber-50 p-2 text-[11px] font-semibold text-amber-800">
+Different value also found: {item.alternatives.map(
+alternative =>
+`${alternative.value} (${alternative.source})`
+).join(" • ")}
+</div>
+)}
+</div>
+
+<div className="rounded-lg bg-slate-50 px-3 py-2 text-xs font-bold text-slate-600">
+Source: {item.source}
+</div>
+</div>
+)
+)}
+</div>
+
+<div className="border-t border-slate-200 bg-slate-50 p-4">
+<button
+type="button"
+onClick={applySelectedReviewValues}
+className="w-full rounded-xl bg-emerald-600 px-5 py-3.5 text-sm font-black text-white shadow-md transition hover:bg-emerald-700 sm:w-auto"
+>
+✓ Apply Selected Values & Attach Documents
+</button>
+
+<p className="mt-2 text-xs font-semibold leading-5 text-slate-500">
+Nothing is saved yet. After applying, scroll through the normal manual form, make any corrections you want, and use the existing Save Policy button at the bottom.
+</p>
+</div>
+
+</div>
+)}
+
+<div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-xs font-semibold leading-5 text-amber-900">
+🔐 Aadhaar privacy: this reader does not return the full Aadhaar number to the browser. It uses KYC details for confirmation and exposes only the last four digits when readable.
+</div>
 
 </section>
 
@@ -6611,6 +8106,87 @@ React.ReactNode;
 return (
 <div className="mt-4 rounded-2xl border border-blue-100 bg-blue-50 p-4 text-sm font-semibold leading-6 text-blue-800">
 ℹ️ {children}
+</div>
+);
+}
+
+
+function DocumentIntakeCard({
+inputKey,
+icon,
+title,
+description,
+file,
+onChange,
+onRemove,
+}: {
+inputKey: string;
+icon: string;
+title: string;
+description: string;
+file: File | null;
+onChange: (
+event: ChangeEvent<HTMLInputElement>
+) => void;
+onRemove: () => void;
+}) {
+return (
+<div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+<div className="flex items-start gap-3">
+<div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-slate-100 text-xl">
+{icon}
+</div>
+<div className="min-w-0 flex-1">
+<p className="font-black text-slate-900">
+{title}
+</p>
+<p className="mt-1 text-xs font-semibold leading-5 text-slate-500">
+{description}
+</p>
+</div>
+</div>
+
+<label className="mt-4 block cursor-pointer rounded-xl border-2 border-dashed border-slate-200 bg-slate-50 p-4 text-center transition hover:border-blue-300 hover:bg-blue-50">
+<input
+key={inputKey}
+type="file"
+accept="application/pdf,.pdf,image/jpeg,.jpg,.jpeg,image/png,.png,image/webp,.webp"
+onChange={onChange}
+className="hidden"
+/>
+<p className="text-sm font-black text-blue-700">
+{file
+? "Change Document"
+: "Choose Document"}
+</p>
+<p className="mt-1 text-[11px] font-semibold text-slate-500">
+PDF / JPG / JPEG / PNG / WEBP
+</p>
+</label>
+
+{file && (
+<div className="mt-3 flex items-center justify-between gap-3 rounded-xl border border-blue-100 bg-blue-50 p-3">
+<div className="min-w-0">
+<p className="truncate text-xs font-black text-slate-800">
+📎 {file.name}
+</p>
+<p className="mt-1 text-[10px] font-semibold text-slate-500">
+{(
+file.size /
+1024 /
+1024
+).toFixed(2)} MB
+</p>
+</div>
+<button
+type="button"
+onClick={onRemove}
+className="rounded-lg border border-red-200 bg-white px-2.5 py-1.5 text-[10px] font-black text-red-600"
+>
+Remove
+</button>
+</div>
+)}
 </div>
 );
 }
