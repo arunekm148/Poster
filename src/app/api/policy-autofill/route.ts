@@ -13,13 +13,45 @@ const ALLOWED_DOCUMENT_TYPES = [
   "AADHAAR",
 ] as const;
 
+type AllowedDocumentType =
+  (typeof ALLOWED_DOCUMENT_TYPES)[number];
+
+function getReaderConfig() {
+  const configuredUrl =
+    process.env.DOCUMENT_READER_URL?.trim();
+
+  const token =
+    process.env.DOCUMENT_READER_TOKEN?.trim();
+
+  const isProduction =
+    process.env.NODE_ENV === "production";
+
+  const url =
+    configuredUrl ||
+    (isProduction
+      ? ""
+      : "http://127.0.0.1:8001/extract");
+
+  return {
+    url,
+    token,
+    isProduction,
+  };
+}
+
 export async function POST(request: Request) {
   try {
     const incoming = await request.formData();
+
     const file = incoming.get("file");
+
     const requestedType = String(
       incoming.get("documentType") || "AUTO"
     ).toUpperCase();
+
+    /* ---------------------------------------------------------------------- */
+    /* VALIDATE FILE                                                          */
+    /* ---------------------------------------------------------------------- */
 
     if (!(file instanceof File)) {
       return NextResponse.json(
@@ -52,6 +84,7 @@ export async function POST(request: Request) {
     }
 
     const lowerName = file.name.toLowerCase();
+
     const allowed =
       file.type === "application/pdf" ||
       file.type.startsWith("image/") ||
@@ -72,22 +105,79 @@ export async function POST(request: Request) {
       );
     }
 
-    const documentType =
+    /* ---------------------------------------------------------------------- */
+    /* DOCUMENT TYPE                                                          */
+    /* ---------------------------------------------------------------------- */
+
+    const documentType: AllowedDocumentType =
       ALLOWED_DOCUMENT_TYPES.includes(
-        requestedType as (typeof ALLOWED_DOCUMENT_TYPES)[number]
+        requestedType as AllowedDocumentType
       )
-        ? requestedType
+        ? (requestedType as AllowedDocumentType)
         : "AUTO";
 
-    const readerUrl =
-      process.env.DOCUMENT_READER_URL?.trim() ||
-      "http://127.0.0.1:8001/extract";
+    /* ---------------------------------------------------------------------- */
+    /* READER CONFIG                                                          */
+    /* ---------------------------------------------------------------------- */
+
+    const reader = getReaderConfig();
+
+    if (!reader.url) {
+      console.error(
+        "POLICY AUTOFILL: DOCUMENT_READER_URL is missing."
+      );
+
+      return NextResponse.json(
+        {
+          success: false,
+          message:
+            "Document reader URL is not configured on the server.",
+        },
+        { status: 503 }
+      );
+    }
+
+    if (reader.isProduction && !reader.token) {
+      console.error(
+        "POLICY AUTOFILL: DOCUMENT_READER_TOKEN is missing."
+      );
+
+      return NextResponse.json(
+        {
+          success: false,
+          message:
+            "Document reader authentication is not configured on the server.",
+        },
+        { status: 503 }
+      );
+    }
+
+    /* ---------------------------------------------------------------------- */
+    /* CREATE OCR REQUEST                                                     */
+    /* ---------------------------------------------------------------------- */
 
     const body = new FormData();
-    body.append("file", file, file.name);
-    body.append("documentType", documentType);
+
+    body.append(
+      "file",
+      file,
+      file.name || "document"
+    );
+
+    body.append(
+      "documentType",
+      documentType
+    );
+
+    const headers: Record<string, string> = {};
+
+    if (reader.token) {
+      headers["X-AgentsIndia-Token"] =
+        reader.token;
+    }
 
     const controller = new AbortController();
+
     const timeout = setTimeout(
       () => controller.abort(),
       120_000
@@ -96,8 +186,9 @@ export async function POST(request: Request) {
     let response: Response;
 
     try {
-      response = await fetch(readerUrl, {
+      response = await fetch(reader.url, {
         method: "POST",
+        headers,
         body,
         cache: "no-store",
         signal: controller.signal,
@@ -107,12 +198,17 @@ export async function POST(request: Request) {
         error instanceof Error &&
         error.name === "AbortError";
 
+      console.error(
+        "POLICY AUTOFILL READER CONNECTION ERROR:",
+        error
+      );
+
       return NextResponse.json(
         {
           success: false,
           message: isAbort
-            ? "Local document reader took too long. Please try again."
-            : "Local document reader is not running. Start document-reader/start-reader.bat and try again.",
+            ? "Document reading took too long. Please try again."
+            : "Unable to connect to the document reader. Please try again shortly.",
         },
         { status: 503 }
       );
@@ -120,15 +216,25 @@ export async function POST(request: Request) {
       clearTimeout(timeout);
     }
 
+    /* ---------------------------------------------------------------------- */
+    /* PARSE OCR RESPONSE                                                     */
+    /* ---------------------------------------------------------------------- */
+
     const payload = await response
       .json()
-      .catch(() => ({}));
+      .catch(() => null);
 
-    if (!response.ok || !payload?.success) {
+    if (!response.ok) {
       const detail =
         payload?.detail ||
         payload?.message ||
-        "Unable to read this document locally.";
+        `Document reader returned HTTP ${response.status}.`;
+
+      console.error(
+        "POLICY AUTOFILL READER ERROR:",
+        response.status,
+        detail
+      );
 
       return NextResponse.json(
         {
@@ -137,10 +243,30 @@ export async function POST(request: Request) {
         },
         {
           status:
-            response.status || 500,
+            response.status >= 400 &&
+            response.status <= 599
+              ? response.status
+              : 500,
         }
       );
     }
+
+    if (!payload?.success) {
+      return NextResponse.json(
+        {
+          success: false,
+          message:
+            payload?.detail ||
+            payload?.message ||
+            "Unable to read this document.",
+        },
+        { status: 422 }
+      );
+    }
+
+    /* ---------------------------------------------------------------------- */
+    /* SUCCESS                                                                */
+    /* ---------------------------------------------------------------------- */
 
     return NextResponse.json({
       success: true,
@@ -151,7 +277,7 @@ export async function POST(request: Request) {
     });
   } catch (error) {
     console.error(
-      "LOCAL POLICY AUTOFILL ERROR:",
+      "POLICY AUTOFILL ERROR:",
       error
     );
 
@@ -161,7 +287,7 @@ export async function POST(request: Request) {
         message:
           error instanceof Error
             ? error.message
-            : "Unable to read this document locally.",
+            : "Unable to read this document.",
       },
       { status: 500 }
     );
