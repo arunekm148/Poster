@@ -1,0 +1,17 @@
+{
+  "name": "Poster (Agents India)",
+  "install": "bash .cursor/scripts/install.sh",
+  "start": "bash .cursor/scripts/start.sh",
+  "terminals": [
+    {
+      "name": "Next.js dev",
+      "command": "npm run dev -- --hostname 0.0.0.0 --port 3000"
+    }
+  ],
+  "ports": [
+    {
+      "name": "Next.js",
+      "port": 3000
+    }
+  ]
+}
